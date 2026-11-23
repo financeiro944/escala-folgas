@@ -263,7 +263,7 @@ function defaultState(){
 
 /* ---- backend (Google Apps Script) + senha (23/11) ---- */
 // URL do Web App do Apps Script, preenchida depois de implantar (ver CLAUDE.md / instruções).
-const API_URL='__API_URL__';
+const API_URL='https://script.google.com/macros/s/AKfycbwHLvMPUWesHsRg_siuPxus_7hELtVP-nj1naJzU8CpIBulNvGNo0ltuRAv-ESwqb-U/exec';
 const SENHA_KEY='escala-folgas-senha';
 const senhaSalva=()=>{ try{ return localStorage.getItem(SENHA_KEY)||''; }catch(e){ return ''; } };
 const salvarSenha=s=>{ try{ localStorage.setItem(SENHA_KEY,s); }catch(e){} };
