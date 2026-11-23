@@ -193,7 +193,8 @@ table.list{ width:100%; border-collapse:collapse; min-width:640px; }
     <p class="muted">Grupo Cores do Rio — acesso restrito por senha.</p>
   </div>
   <form id="loginForm" style="display:flex;flex-direction:column;gap:12px">
-    <label class="field">Senha<input type="password" id="senhaInput" required autofocus></label>
+    <label class="field">E-mail<input type="email" id="emailInput" required autofocus></label>
+    <label class="field">Senha<input type="password" id="senhaInput" required></label>
     <button class="btn primary" type="submit">Entrar</button>
     <p id="loginErr" class="muted" style="min-height:1.2em"></p>
   </form>
@@ -264,19 +265,19 @@ function defaultState(){
 /* ---- backend (Google Apps Script) + senha (23/11) ---- */
 // URL do Web App do Apps Script, preenchida depois de implantar (ver CLAUDE.md / instruções).
 const API_URL='https://script.google.com/macros/s/AKfycbwHLvMPUWesHsRg_siuPxus_7hELtVP-nj1naJzU8CpIBulNvGNo0ltuRAv-ESwqb-U/exec';
-const SENHA_KEY='escala-folgas-senha';
-const senhaSalva=()=>{ try{ return localStorage.getItem(SENHA_KEY)||''; }catch(e){ return ''; } };
-const salvarSenha=s=>{ try{ localStorage.setItem(SENHA_KEY,s); }catch(e){} };
-const limparSenha=()=>{ try{ localStorage.removeItem(SENHA_KEY); }catch(e){} };
-async function buscarEstadoRemoto(senha){
-  const r=await fetch(API_URL+'?senha='+encodeURIComponent(senha));
+const LOGIN_KEY='escala-folgas-login';
+const loginSalvo=()=>{ try{ return JSON.parse(localStorage.getItem(LOGIN_KEY)||'null'); }catch(e){ return null; } };
+const salvarLogin=l=>{ try{ localStorage.setItem(LOGIN_KEY,JSON.stringify(l)); }catch(e){} };
+const limparLogin=()=>{ try{ localStorage.removeItem(LOGIN_KEY); }catch(e){} };
+async function buscarEstadoRemoto(email,senha){
+  const r=await fetch(API_URL+'?email='+encodeURIComponent(email)+'&senha='+encodeURIComponent(senha));
   const j=await r.json();
-  if(!j.ok) throw new Error(j.erro||'Senha incorreta.');
+  if(!j.ok) throw new Error(j.erro||'E-mail ou senha incorretos.');
   return j.state;
 }
-async function salvarEstadoRemoto(senha,st){
+async function salvarEstadoRemoto(email,senha,st){
   // text/plain evita o preflight de CORS que o Apps Script não responde direito.
-  const r=await fetch(API_URL,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify({senha,state:st})});
+  const r=await fetch(API_URL,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify({email,senha,state:st})});
   const j=await r.json();
   if(!j.ok) throw new Error(j.erro||'Falha ao salvar.');
 }
@@ -285,9 +286,9 @@ function indicarSync(ok){ const el=document.getElementById('syncErr'); if(el) el
 let state=null;
 function save(){
   try{ localStorage.setItem(LS_KEY,JSON.stringify(state)); }catch(e){}
-  const senha=senhaSalva();
-  if(!senha) return;
-  salvarEstadoRemoto(senha,state).then(()=>indicarSync(true)).catch(()=>indicarSync(false));
+  const login=loginSalvo();
+  if(!login) return;
+  salvarEstadoRemoto(login.email,login.senha,state).then(()=>indicarSync(true)).catch(()=>indicarSync(false));
 }
 const ui={tab:'escala',loja:null,pop:null};
 
@@ -790,31 +791,32 @@ function doGerar(){
 const telaLogin=document.getElementById('login');
 const appEl=document.getElementById('app');
 const loginForm=document.getElementById('loginForm');
+const emailInput=document.getElementById('emailInput');
 const senhaInput=document.getElementById('senhaInput');
 const loginErr=document.getElementById('loginErr');
 const sairBtn=document.getElementById('sair');
 
-async function entrar(senha){
+async function entrar(email,senha){
   loginErr.textContent='Entrando...';
   try{
-    const remoto=await buscarEstadoRemoto(senha);
+    const remoto=await buscarEstadoRemoto(email,senha);
     state = remoto || defaultState();
     state.feriadoEquipe = state.feriadoEquipe || {};
-    salvarSenha(senha);
+    salvarLogin({email,senha});
     try{ localStorage.setItem(LS_KEY,JSON.stringify(state)); }catch(e){}
     ui.loja = state.lojas[0] ? state.lojas[0].id : null;
     telaLogin.style.display='none';
     appEl.style.display='';
     render();
   }catch(err){
-    loginErr.textContent='Senha incorreta ou sem conexão com o servidor. Tente de novo.';
+    loginErr.textContent='E-mail ou senha incorretos, ou sem conexão com o servidor. Tente de novo.';
   }
 }
-loginForm.addEventListener('submit',e=>{ e.preventDefault(); entrar(senhaInput.value.trim()); });
-sairBtn.addEventListener('click',()=>{ limparSenha(); location.reload(); });
+loginForm.addEventListener('submit',e=>{ e.preventDefault(); entrar(emailInput.value.trim(),senhaInput.value.trim()); });
+sairBtn.addEventListener('click',()=>{ limparLogin(); location.reload(); });
 
-const senhaCache=senhaSalva();
-if(senhaCache){ entrar(senhaCache); }
+const loginCache=loginSalvo();
+if(loginCache){ entrar(loginCache.email,loginCache.senha); }
 else { telaLogin.style.display=''; appEl.style.display='none'; }
 })();
 </script>
