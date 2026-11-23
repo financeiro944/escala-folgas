@@ -1,0 +1,822 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Escala de Folgas – protótipo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#f3f5f6; --sheet:#ffffff; --sheet2:#eaeef0; --line:#d5dbdf; --ink:#16202a; --muted:#5d6973;
+  --red:#c8102e; --red-soft:#fde4e8;
+  --t1:#1c6b8a; --t1-soft:#dceef5; --t2:#6a4b98; --t2-soft:#ebe4f5;
+  --comp:#a8650a; --comp-soft:#fbeed6; --part:#257446; --part-soft:#dcf1e4;
+  --vac:#7b858d; --vac-soft:#e4e8eb; --sun:#f6eef0; --warn:#b06d00; --ok:#257446;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#11171c; --sheet:#182128; --sheet2:#1f2a32; --line:#2e3b45; --ink:#e7edf1; --muted:#97a5b0;
+    --red:#ff5a6e; --red-soft:#3d1a21;
+    --t1:#6cc0e0; --t1-soft:#16323d; --t2:#b79ae6; --t2-soft:#2b2340;
+    --comp:#f0b34f; --comp-soft:#3a2b12; --part:#6fd39a; --part-soft:#16331f;
+    --vac:#9aa5ad; --vac-soft:#26313a; --sun:#241a1f; --warn:#f0b34f; --ok:#6fd39a;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#11171c; --sheet:#182128; --sheet2:#1f2a32; --line:#2e3b45; --ink:#e7edf1; --muted:#97a5b0;
+  --red:#ff5a6e; --red-soft:#3d1a21;
+  --t1:#6cc0e0; --t1-soft:#16323d; --t2:#b79ae6; --t2-soft:#2b2340;
+  --comp:#f0b34f; --comp-soft:#3a2b12; --part:#6fd39a; --part-soft:#16331f;
+  --vac:#9aa5ad; --vac-soft:#26313a; --sun:#241a1f; --warn:#f0b34f; --ok:#6fd39a;
+  color-scheme: dark;
+}
+:root{ box-sizing:border-box; padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px); }
+html{ scroll-padding-top:env(safe-area-inset-top,0px); }
+*,*::before,*::after{ box-sizing:inherit; }
+body{ margin:0; background:var(--paper); color:var(--ink); font-family:"Archivo",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; font-size:15px; line-height:1.45; font-variant-numeric:tabular-nums; }
+button,input,select{ font:inherit; color:inherit; }
+button{ cursor:pointer; }
+:focus-visible{ outline:2px solid var(--t1); outline-offset:2px; }
+.wrap{ max-width:1400px; margin:0 auto; padding:20px 20px 60px; }
+
+/* topo */
+.top{ display:flex; flex-wrap:wrap; align-items:flex-end; justify-content:space-between; gap:16px 24px; padding-bottom:18px; border-bottom:2px solid var(--ink); }
+.title h1{ margin:0; font-stretch:72%; font-weight:700; font-size:clamp(30px,5vw,46px); line-height:1; letter-spacing:-0.01em; }
+.title p{ margin:6px 0 0; color:var(--muted); font-size:14px; }
+.src{ display:inline-flex; align-items:center; gap:6px; font-size:13px; color:var(--muted); }
+.src i{ width:8px; height:8px; border-radius:50%; background:var(--warn); display:inline-block; }
+.controls{ display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
+.field{ display:flex; flex-direction:column; gap:3px; font-size:12px; color:var(--muted); }
+.field input,.field select{ background:var(--sheet); border:1px solid var(--line); border-radius:6px; padding:7px 9px; min-height:38px; }
+.btn{ border:1px solid var(--line); background:var(--sheet); border-radius:6px; padding:8px 14px; min-height:38px; font-weight:600; }
+.btn.primary{ background:var(--red); border-color:var(--red); color:#fff; }
+:root[data-theme="dark"] .btn.primary{ color:#1a0a0d; }
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]) .btn.primary{ color:#1a0a0d; } }
+.btn.ghost{ background:transparent; }
+
+/* abas */
+.tabs{ display:flex; gap:4px; margin:18px 0 0; overflow-x:auto; }
+.tab{ border:none; background:none; padding:10px 14px; font-weight:600; color:var(--muted); border-bottom:3px solid transparent; white-space:nowrap; }
+.tab[aria-selected="true"]{ color:var(--ink); border-bottom-color:var(--red); }
+.panel{ padding-top:20px; }
+
+.banner{ background:var(--comp-soft); color:var(--ink); border-left:4px solid var(--comp); padding:10px 14px; border-radius:4px; margin-bottom:16px; display:flex; gap:12px; align-items:center; flex-wrap:wrap; justify-content:space-between; }
+
+/* resumo */
+.summary{ display:flex; flex-wrap:wrap; gap:8px 22px; align-items:baseline; margin-bottom:14px; }
+.summary .big{ font-stretch:75%; font-weight:700; font-size:22px; }
+.summary .item{ display:flex; gap:6px; align-items:baseline; color:var(--muted); font-size:14px; }
+.summary .item.bad .big{ color:var(--red); }
+.summary .item.warn .big{ color:var(--warn); }
+.summary .item.good .big{ color:var(--ok); }
+
+.legend{ display:flex; flex-wrap:wrap; gap:6px 16px; font-size:13px; color:var(--muted); margin-bottom:10px; }
+.legend span{ display:inline-flex; gap:6px; align-items:center; }
+.chip{ display:inline-grid; place-items:center; min-width:26px; height:22px; padding:0 4px; border-radius:4px; font-weight:700; font-size:12px; font-stretch:80%; }
+
+/* grade */
+.grid-wrap{ overflow:auto; border:1px solid var(--line); border-radius:8px; background:var(--sheet); max-height:72vh; }
+table.grid{ border-collapse:separate; border-spacing:0; min-width:100%; }
+.grid th,.grid td{ border-bottom:1px solid var(--line); border-right:1px solid var(--line); padding:0; text-align:center; }
+.grid thead th{ position:sticky; top:0; background:var(--sheet); z-index:3; font-weight:500; padding:6px 2px; min-width:40px; }
+.grid thead th .wd{ display:block; font-size:11px; color:var(--muted); font-stretch:80%; }
+.grid thead th .dn{ display:block; font-size:16px; font-weight:700; font-stretch:75%; }
+.grid thead th.sun,.grid td.sun{ background:var(--sun); }
+.grid thead th .fer{ display:block; font-size:10px; color:var(--red); font-weight:700; }
+.grid .name{ position:sticky; left:0; z-index:2; background:var(--sheet); text-align:left; padding:6px 10px; min-width:200px; max-width:220px; }
+.grid thead th.name{ z-index:4; }
+.name .n{ font-weight:600; display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.name .m{ font-size:12px; color:var(--muted); display:flex; gap:8px; flex-wrap:wrap; }
+.name .bh{ color:var(--comp); font-weight:600; }
+.name.flag .n::after{ content:" !"; color:var(--red); }
+tr.grp td{ background:var(--sheet2); text-align:left; font-weight:600; padding:7px 10px; font-size:13px; }
+tr.grp td.name{ background:var(--sheet2); }
+tr.grp .bar{ display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:6px; vertical-align:-1px; }
+td.cell{ height:40px; }
+td.cell button{ width:100%; height:100%; border:none; background:transparent; padding:0; display:grid; place-items:center; min-height:40px; }
+td.cell button:hover{ background:var(--sheet2); }
+.s-T .mark{ width:6px; height:6px; border-radius:50%; background:var(--line); }
+.t1 .s-T .mark{ background:var(--t1); opacity:.45; }
+.t2 .s-T .mark{ background:var(--t2); opacity:.45; }
+.mk-F{ background:var(--red); color:#fff; }
+.mk-C{ background:var(--comp-soft); color:var(--comp); box-shadow:inset 0 0 0 1.5px var(--comp); }
+.mk-P{ background:var(--part-soft); color:var(--part); }
+.mk-V{ background:var(--vac-soft); color:var(--vac); }
+:root[data-theme="dark"] .mk-F{ color:#1a0a0d; }
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]) .mk-F{ color:#1a0a0d; } }
+td.cell.err{ box-shadow:inset 0 0 0 2px var(--red); }
+td.cell.warn{ box-shadow:inset 0 -3px 0 0 var(--warn); }
+tfoot td{ position:sticky; bottom:0; background:var(--sheet2); font-size:12px; font-weight:600; padding:5px 2px; }
+tfoot tr:first-child td{ border-top:2px solid var(--ink); bottom:28px; }
+tfoot td.name{ z-index:3; background:var(--sheet2); font-size:12px; }
+tfoot td.short{ color:var(--red); background:var(--red-soft); }
+tfoot td.na{ color:var(--muted); font-weight:400; }
+
+/* alertas */
+.issues{ margin-top:22px; }
+.issues h2,.sec h2{ font-stretch:80%; font-size:20px; margin:0 0 10px; }
+.issues ul{ list-style:none; margin:0; padding:0; columns:2 360px; column-gap:28px; }
+.issues li{ break-inside:avoid; padding:7px 0 7px 14px; border-bottom:1px solid var(--line); font-size:14px; position:relative; }
+.issues li::before{ content:""; position:absolute; left:0; top:13px; width:7px; height:7px; border-radius:50%; background:var(--red); }
+.issues li.w::before{ background:var(--warn); }
+.issues li.i::before{ background:var(--t1); }
+.empty{ padding:40px 20px; text-align:center; border:1px dashed var(--line); border-radius:8px; background:var(--sheet); }
+.empty p{ color:var(--muted); max-width:52ch; margin:8px auto 18px; }
+
+/* equipes */
+.store{ margin-bottom:34px; }
+.store-head{ display:flex; flex-wrap:wrap; justify-content:space-between; align-items:flex-end; gap:14px; margin-bottom:12px; }
+.store-head h2{ margin:0; font-stretch:75%; font-size:26px; }
+.cov{ display:flex; flex-wrap:wrap; gap:10px; }
+.cov .field input{ width:74px; }
+.cov-grupos{ display:flex; flex-wrap:wrap; gap:18px; margin-bottom:16px; }
+.cov-grupo{ background:var(--sheet); border:1px solid var(--line); border-radius:8px; padding:12px 14px; min-width:260px; flex:1; }
+.cov-grupo h3{ margin:0 0 8px; font-size:14px; font-weight:600; }
+.cov-lista{ display:flex; flex-direction:column; gap:6px; margin-bottom:8px; }
+.cov-regra{ display:flex; flex-wrap:wrap; gap:6px; align-items:center; font-size:13px; }
+.cov-regra select{ background:var(--paper); border:1px solid var(--line); border-radius:6px; padding:4px 6px; }
+.cov-regra input{ width:56px; background:var(--paper); border:1px solid var(--line); border-radius:6px; padding:4px 6px; }
+.cov-regra button{ border:none; background:transparent; color:var(--muted); font-size:16px; line-height:1; padding:2px 6px; }
+.tbl-wrap{ overflow-x:auto; border:1px solid var(--line); border-radius:8px; background:var(--sheet); }
+table.list{ width:100%; border-collapse:collapse; min-width:640px; }
+.list th,.list td{ padding:9px 12px; text-align:left; border-bottom:1px solid var(--line); font-size:14px; }
+.list th{ font-size:12px; color:var(--muted); font-weight:500; background:var(--sheet2); }
+.list td.num,.list th.num{ text-align:right; }
+.seg{ display:inline-flex; border:1px solid var(--line); border-radius:6px; overflow:hidden; }
+.seg button{ border:none; background:transparent; padding:6px 12px; font-weight:600; font-size:13px; }
+.seg button[aria-pressed="true"].b1{ background:var(--t1); color:#fff; }
+.seg button[aria-pressed="true"].b2{ background:var(--t2); color:#fff; }
+.seg button[aria-pressed="true"].bf{ background:var(--ink); color:var(--sheet); }
+.list select,.list input{ background:var(--sheet); border:1px solid var(--line); border-radius:6px; padding:5px 8px; }
+.list input.saldo{ width:80px; text-align:right; }
+.muted{ color:var(--muted); }
+.neg{ color:var(--warn); font-weight:600; }
+
+.sec{ margin-bottom:34px; max-width:860px; }
+.rules{ margin:0; padding-left:20px; }
+.rules li{ margin-bottom:8px; }
+.fer-list{ display:flex; flex-wrap:wrap; gap:8px; margin:10px 0; }
+.fer-list span{ display:inline-flex; align-items:center; gap:6px; background:var(--sheet); border:1px solid var(--line); border-radius:6px; padding:5px 6px 5px 10px; font-size:14px; }
+.fer-list button{ border:none; background:transparent; color:var(--muted); font-size:16px; line-height:1; padding:2px 6px; }
+.row{ display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; }
+
+/* popover */
+#pop{ position:fixed; z-index:50; background:var(--sheet); border:1px solid var(--line); border-radius:10px; box-shadow:0 12px 32px rgba(10,20,30,.22); width:260px; padding:12px; display:none; }
+#pop.open{ display:block; }
+#pop h3{ margin:0 0 2px; font-size:15px; }
+#pop .sub{ font-size:13px; color:var(--muted); margin-bottom:10px; }
+#pop .opts{ display:grid; gap:6px; }
+#pop .opts button{ display:flex; align-items:center; gap:10px; text-align:left; border:1px solid var(--line); background:var(--sheet); border-radius:6px; padding:7px 9px; font-size:14px; }
+#pop .opts button[aria-pressed="true"]{ border-color:var(--ink); background:var(--sheet2); }
+#pop .note{ font-size:12px; color:var(--muted); margin-top:8px; }
+@media (max-width:640px){
+  .wrap{ padding:14px 12px 60px; }
+  #pop.open{ left:0 !important; right:0; top:auto !important; bottom:0; width:auto; border-radius:14px 14px 0 0; padding-bottom:calc(14px + env(safe-area-inset-bottom,0px)); }
+  .grid .name{ min-width:150px; }
+}
+@media (prefers-reduced-motion:no-preference){ #pop.open{ animation:pop .14s ease-out; } @keyframes pop{ from{ opacity:0; transform:translateY(4px);} to{opacity:1;transform:none;} } }
+@media print{
+  .controls,.tabs,.banner,#pop,.issues,.no-print{ display:none !important; }
+  .grid-wrap{ max-height:none; overflow:visible; border:none; }
+  body{ background:#fff; }
+}
+</style>
+</head>
+<body>
+<div id="login" class="wrap" style="max-width:380px;padding-top:min(18vh,120px)">
+  <div class="title" style="margin-bottom:22px">
+    <h1>Escala de folgas</h1>
+    <p class="muted">Grupo Cores do Rio — acesso restrito por senha.</p>
+  </div>
+  <form id="loginForm" style="display:flex;flex-direction:column;gap:12px">
+    <label class="field">Senha<input type="password" id="senhaInput" required autofocus></label>
+    <button class="btn primary" type="submit">Entrar</button>
+    <p id="loginErr" class="muted" style="min-height:1.2em"></p>
+  </form>
+</div>
+<div id="app" class="wrap" style="display:none">
+  <div id="syncErr" class="banner no-print" style="display:none;background:var(--red-soft);border-color:var(--red)"><span>Não foi possível salvar no servidor agora (sem conexão?). O que você fizer continua só neste navegador até sincronizar de novo.</span></div>
+  <header class="top">
+    <div class="title">
+      <h1>Escala de folgas</h1>
+      <p><span class="src"><i></i>Dados compartilhados no servidor. Pontomais ainda não conectado (será somente leitura).</span></p>
+    </div>
+    <div class="controls">
+      <label class="field">Mês<input type="month" id="mes"></label>
+      <label class="field">Loja<select id="loja"></select></label>
+      <button class="btn primary" id="gerar">Gerar escala</button>
+      <button class="btn ghost" id="imprimir">Imprimir</button>
+      <button class="btn ghost" id="sair">Sair</button>
+    </div>
+  </header>
+  <nav class="tabs" role="tablist">
+    <button class="tab" role="tab" data-tab="escala">Escala do mês</button>
+    <button class="tab" role="tab" data-tab="equipes">Equipes e cobertura</button>
+    <button class="tab" role="tab" data-tab="banco">Banco de horas</button>
+    <button class="tab" role="tab" data-tab="regras">Regras e feriados</button>
+  </nav>
+  <main id="main" class="panel"></main>
+</div>
+<div id="pop" role="dialog" aria-modal="false"></div>
+
+<script>
+(function(){
+const LS_KEY='escala-folgas-v1';
+// Sobe 1 toda vez que os dados padrão (colaboradores, lojas, feriados) são editados
+// neste arquivo, OU que a lógica de geração muda de um jeito que invalida escalas já
+// geradas (ex.: troca de regime 6x1→5x2 em 23/11), para o navegador saber que precisa
+// recarregar do arquivo/limpar escalas antigas em vez de usar o que já tinha salvo.
+// Quem edita isso é o Claude Code, a pedido do Stênio.
+const DADOS_VERSAO=8;
+const MIN_DIA=504; // 8h24 (42h / 5 dias) — regime 5x2 decidido em 23/11
+// Turnos por tipo de dia (seg-sex / sábado / domingo e feriado), definidos em 23/11
+// quando a loja passou para o regime 5x2 de 42h semanais. Cada turno dura 9h24 de
+// expediente (8h24 de trabalho + 1h de almoço em aberto). Domingo/feriado passou a
+// ter 2 turnos como qualquer outro dia (antes, no regime 6x1, era horário único).
+const TURNOS={
+  semana:{1:{ini:520,fim:1084},2:{ini:656,fim:1220}},
+  sabado:{1:{ini:520,fim:1084},2:{ini:596,fim:1160}},
+  domingo:{1:{ini:540,fim:1104},2:{ini:576,fim:1140}}
+};
+const NOME_TURNO={1:'Turno 1',2:'Turno 2'};
+function tipoDia(d){ return especial(d)?'domingo':(d.dow===6?'sabado':'semana'); }
+const WD=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+const WDL=['domingo','segunda','terça','quarta','quinta','sexta','sábado'];
+const MESES=['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
+const pad=n=>String(n).padStart(2,'0');
+const hm=m=>pad(Math.floor(m/60))+':'+pad(m%60);
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+function C(id,nome,sexo,loja,turno,funcao,saldo,ferias){return {id,nome,sexo,loja,turno,funcao,saldo:saldo||0,ferias:ferias||[]};}
+// Dados reais (colaboradores, lojas, cobertura, licenças, saldo de banco de horas) NÃO ficam
+// neste arquivo (23/11) — ele é publicado num repositório público do GitHub Pages, e esses
+// dados são sensíveis. Tudo isso mora só no backend (Google Apps Script + Google Drive),
+// atrás de senha (ver "backend" logo abaixo). defaultState() aqui é só o ponto de partida de
+// uma conta nova, sem ninguém cadastrado ainda.
+function defaultState(){
+  return { v:1, dv:DADOS_VERSAO, mes:'2026-11', feriados:[], dirty:false, escalas:{}, feriadoEquipe:{}, lojas:[], colabs:[] };
+}
+
+/* ---- backend (Google Apps Script) + senha (23/11) ---- */
+// URL do Web App do Apps Script, preenchida depois de implantar (ver CLAUDE.md / instruções).
+const API_URL='__API_URL__';
+const SENHA_KEY='escala-folgas-senha';
+const senhaSalva=()=>{ try{ return localStorage.getItem(SENHA_KEY)||''; }catch(e){ return ''; } };
+const salvarSenha=s=>{ try{ localStorage.setItem(SENHA_KEY,s); }catch(e){} };
+const limparSenha=()=>{ try{ localStorage.removeItem(SENHA_KEY); }catch(e){} };
+async function buscarEstadoRemoto(senha){
+  const r=await fetch(API_URL+'?senha='+encodeURIComponent(senha));
+  const j=await r.json();
+  if(!j.ok) throw new Error(j.erro||'Senha incorreta.');
+  return j.state;
+}
+async function salvarEstadoRemoto(senha,st){
+  // text/plain evita o preflight de CORS que o Apps Script não responde direito.
+  const r=await fetch(API_URL,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify({senha,state:st})});
+  const j=await r.json();
+  if(!j.ok) throw new Error(j.erro||'Falha ao salvar.');
+}
+function indicarSync(ok){ const el=document.getElementById('syncErr'); if(el) el.style.display=ok?'none':''; }
+
+let state=null;
+function save(){
+  try{ localStorage.setItem(LS_KEY,JSON.stringify(state)); }catch(e){}
+  const senha=senhaSalva();
+  if(!senha) return;
+  salvarEstadoRemoto(senha,state).then(()=>indicarSync(true)).catch(()=>indicarSync(false));
+}
+const ui={tab:'escala',loja:null,pop:null};
+
+/* datas */
+function parseISO(s){const [y,m,d]=s.split('-').map(Number);return new Date(Date.UTC(y,m-1,d));}
+function epochDay(iso){return Math.round(parseISO(iso).getTime()/86400000);}
+function diasDoMes(mes){
+  const [y,m]=mes.split('-').map(Number); const n=new Date(Date.UTC(y,m,0)).getUTCDate(); const out=[];
+  for(let d=1;d<=n;d++){ const iso=`${y}-${pad(m)}-${pad(d)}`; const dow=parseISO(iso).getUTCDay();
+    out.push({iso,d,dow,fer:state.feriados.includes(iso),wk:epochDay(iso)-((dow+6)%7)}); }
+  return out;
+}
+const especial=d=>d.dow===0||d.fer;
+const fmtD=iso=>{const p=iso.split('-');return p[2]+'/'+p[1];};
+function emFerias(c,iso){return (c.ferias||[]).some(([a,b])=>iso>=a&&iso<=b);}
+const trabalha=x=>x.s==='T'||x.s==='P';
+const ehFolga=x=>x.s==='F'||x.s==='C'||x.s==='V';
+function fmtH(min){ if(!min) return '0h'; const s=min<0?'−':''; min=Math.abs(min); const h=Math.floor(min/60),m=min%60; return s+h+'h'+(m?pad(m):''); }
+function parseSaldo(str){ str=String(str).trim().replace(',','.'); if(!str) return 0;
+  const m=str.match(/^(-?\d+)\s*[h:]\s*(\d{1,2})?\s*$/i); if(m){ const h=+m[1]; return h*60+(h<0?-1:1)*(+(m[2]||0)); }
+  const n=parseFloat(str); return isNaN(n)?0:Math.round(n*60); }
+function semanas(dias){ const g=[]; let cur=null; for(const d of dias){ if(!cur||cur.wk!==d.wk){ cur={wk:d.wk,dias:[]}; g.push(cur);} cur.dias.push(d);} return g; }
+// cobertura mínima por função: cada loja tem uma lista de regras por tipo de dia
+// (semana/sábado/domingo), cada regra = {janela:'geral'|'turno1'|'turno2', papel, min}.
+// papel '_total' = conta todo mundo que bate com a janela, sem olhar a função.
+function papelDe(funcao){
+  const f=String(funcao||'').toLowerCase();
+  if(f.includes('vend')) return 'vendedor';
+  if(f.includes('caixa')) return 'caixa';
+  if(f.includes('estoqu')) return 'estoquista';
+  if(f.includes('gerente')) return 'gerente';
+  return f;
+}
+// Mínimo de 2 vendedores sempre (decisão de 23/11): nunca pode ter só 1 vendedor
+// trabalhando. É um piso que se aplica a qualquer loja/dia, mesmo que a regra
+// configurada não exista (ex.: domingo da Cores da Barra) ou peça menos que isso.
+function aplicarPisoVendedor(regras){
+  const out=(regras||[]).map(r=>(r.papel==='vendedor'&&r.janela==='geral')?{...r,min:Math.max(r.min,2)}:r);
+  if(!out.some(r=>r.papel==='vendedor'&&r.janela==='geral')) out.push({janela:'geral',papel:'vendedor',min:2});
+  return out;
+}
+function regrasDoDia(loja,d){ return aplicarPisoVendedor(especial(d)?(loja.cob.domingo||[]):(d.dow===6?(loja.cob.sabado||[]):(loja.cob.semana||[]))); }
+function janelaIncluiTurno(janela,turno){ return janela==='geral'||(janela==='turno1'&&turno===1)||(janela==='turno2'&&turno===2); }
+function papelBate(papelRegra,papel){ return papelRegra==='_total'||papelRegra===papel; }
+// Em feriado (23/11), quem trabalha e em qual turno vem da equipe escolhida pelo Stênio
+// (state.feriadoEquipe), não do turno normal do colaborador — usado para cobertura, pontuação
+// e para mostrar o horário certo na grade. Em qualquer outro dia, é só o turno normal mesmo.
+function turnoDoDia(c,d){
+  if(d.fer){ const eq=(state.feriadoEquipe&&state.feriadoEquipe[d.iso])||{}; if(eq[c.id]) return eq[c.id]; }
+  return c.turno;
+}
+function contarRegra(E,cs,d,regra){ return cs.filter(o=>E[o.id]&&trabalha(E[o.id][d.iso])&&janelaIncluiTurno(regra.janela,turnoDoDia(o,d))&&papelBate(regra.papel,papelDe(o.funcao))).length; }
+function regrasQueContam(loja,d,c){ return regrasDoDia(loja,d).filter(regra=>janelaIncluiTurno(regra.janela,turnoDoDia(c,d))&&papelBate(regra.papel,papelDe(c.funcao))); }
+function quebraCobertura(loja,E,cs,d,c){ return regrasQueContam(loja,d,c).some(regra=>(contarRegra(E,cs,d,regra)-1)<regra.min); }
+function rotuloRegra(regra){ const jan=regra.janela==='geral'?'loja':regra.janela==='turno1'?'turno 1':'turno 2'; return regra.papel==='_total'?jan:regra.papel+' ('+jan+')'; }
+// usada só pelo gerador de domingo (que precisa de 1 número só): a regra "geral + todo mundo" do domingo
+function minimoDomTotal(loja){ const r=(loja.cob.domingo||[]).find(x=>x.janela==='geral'&&x.papel==='_total'); return r?r.min:0; }
+function horario(c,d,cell){
+  if(cell.s==='V') return 'Férias'; if(cell.s==='F') return 'Folga semanal'; if(cell.s==='C') return 'Folga compensatória (banco de horas)';
+  const turno=turnoDoDia(c,d);
+  const tt=TURNOS[tipoDia(d)][turno];
+  let ini=tt.ini, fim=tt.fim;
+  if(cell.s==='P'){ if(turno===1) fim-=cell.p; else ini+=cell.p; }
+  return 'Trabalha das '+hm(ini)+' às '+hm(fim);
+}
+
+/* gerador */
+function sequencia(row,dias,i){
+  let b=0; for(let j=i-1;j>=0&&!ehFolga(row[dias[j].iso]);j--) b++;
+  let a=0,achou=false; for(let j=i+1;j<dias.length;j++){ if(ehFolga(row[dias[j].iso])){achou=true;break;} a++; if(a>13) break; }
+  return {b,a:achou?a:0,achou};
+}
+function pontuar(E,dias,loja,cs,c,d){
+  let sc=0;
+  if(quebraCobertura(loja,E,cs,d,c)) sc+=1000;
+  sc+=cs.filter(o=>o.id!==c.id&&turnoDoDia(o,d)===turnoDoDia(c,d)&&(E[o.id][d.iso].s==='F'||E[o.id][d.iso].s==='C')).length*10;
+  // Folga deve cair de preferência entre segunda e quarta (pedido do Stênio): sexta e sábado
+  // são dias de pico (evita quase sempre), quinta também é evitada (quase tanto quanto
+  // sexta/sábado) — testado com varredura de parâmetros: esse equilíbrio foi o único que
+  // concentrou a maioria das folgas em seg-qua sem estourar sexta/sábado como válvula de escape.
+  if(d.dow===6) sc+=90; if(d.dow===5) sc+=90; if(d.dow===4) sc+=60; if(d.fer) sc+=10;
+  const {b,a,achou}=sequencia(E[c.id],dias,dias.indexOf(d));
+  // Regime 5x2 (23/11): limite duro é 7 dias seguidos sem folga (sem exceção — ver
+  // forcarLimiteSequencia() no gerar()). Esse peso quadrático é só para o gerador PREFERIR
+  // não chegar nem perto do limite (ajuda a sobrar folga pros dois lados da semana);
+  // quem garante o limite de verdade é o passo seguinte, não este peso.
+  sc+=Math.pow(Math.max(0,b-4),2)*5+Math.pow(Math.max(0,a-4),2)*5;
+  if(!achou&&b<4) sc+=(4-b)*8;
+  return sc;
+}
+function gerar(){
+  const dias=diasDoMes(state.mes); const E={};
+  for(const c of state.colabs){ E[c.id]={}; for(const d of dias) E[c.id][d.iso]={s:emFerias(c,d.iso)?'V':'T',p:0}; }
+  for(const loja of state.lojas){
+    const cs=state.colabs.filter(c=>c.loja===loja.id);
+    const ord=[...cs].sort((a,b)=>a.turno-b.turno||a.id.localeCompare(b.id));
+    // Domingo (23/11): regra unificada para todo mundo — trabalha um domingo sim,
+    // outro não (sem diferença por sexo, que era a regra antiga).
+    const fase={}; ord.forEach((c,i)=>fase[c.id]=i%2);
+    // para cada domingo do mês, em que índice (0,1,2...) cada colaborador folgaria
+    // naturalmente pela fase (sem nenhuma reversão por cobertura)
+    const domsSun=dias.filter(d=>d.dow===0);
+    const restIdx={};
+    cs.forEach(c=>{
+      restIdx[c.id]=domsSun.map((d,i)=>({i,k:Math.floor(epochDay(d.iso)/7)})).filter(x=>(x.k%2)===fase[c.id]).map(x=>x.i);
+    });
+    // reverter a folga de domingo de índice i do colaborador c cria 2 domingos seguidos
+    // trabalhados? só enxerga o que está dentro do mês (sem dado do mês anterior)
+    function folgaArriscada(c,i){
+      const idx=restIdx[c.id], pos=idx.indexOf(i);
+      const prevIdx=pos>0?idx[pos-1]:null, nextIdx=pos<idx.length-1?idx[pos+1]:null;
+      const maxOk=1;
+      if(prevIdx!=null&&nextIdx!=null) return (nextIdx-prevIdx-1)>maxOk;
+      if(prevIdx==null&&nextIdx!=null) return (nextIdx-i)>maxOk;
+      if(prevIdx!=null&&nextIdx==null) return (i-prevIdx)>maxOk;
+      return false;
+    }
+    domsSun.forEach((d,i)=>{
+      const k=Math.floor(epochDay(d.iso)/7);
+      ord.forEach(c=>{ if(k%2===fase[c.id]&&E[c.id][d.iso].s==='T') E[c.id][d.iso].s='F'; });
+      let trab=cs.filter(c=>trabalha(E[c.id][d.iso])).length;
+      const folgados=ord.filter(c=>E[c.id][d.iso].s==='F');
+      const seguros=folgados.filter(c=>!folgaArriscada(c,i));
+      const arriscados=folgados.filter(c=>folgaArriscada(c,i));
+      const domMin=minimoDomTotal(loja);
+      while(trab<domMin&&seguros.length){ E[seguros.shift().id][d.iso].s='T'; trab++; }
+      // cobertura mínima é configurável (não é lei); a regra de domingo vem da CLT.
+      // Uma falta de só 1 pessoa é preferível a forçar alguém numa 2ª folga de
+      // domingo seguida trabalhada — só usa gente em risco se a falta for maior.
+      while(trab<domMin-1&&arriscados.length){ E[arriscados.shift().id][d.iso].s='T'; trab++; }
+    });
+    // Equipe do feriado (23/11): quem trabalha e em qual turno, nos feriados, vem da escolha
+    // do Stênio (state.feriadoEquipe), não do turno normal nem do revezamento de domingo —
+    // isso sobrepõe o que a fase de domingo decidiu acima quando o feriado cai num domingo.
+    // Quem não está na equipe do feriado folga (conta como folga da semana); férias não mudam.
+    dias.filter(d=>d.fer).forEach(d=>{
+      const eq=(state.feriadoEquipe&&state.feriadoEquipe[d.iso])||{};
+      cs.forEach(c=>{ if(E[c.id][d.iso].s!=='V') E[c.id][d.iso].s=eq[c.id]?'T':'F'; });
+    });
+    // Segunda obrigatória após domingo trabalhado (decisão de 23/11, regra dura): quem
+    // trabalhou no domingo (ou domingo-feriado) folga sem falta na segunda-feira seguinte.
+    // Isso conta como uma das 2 folgas semanais daquela semana (ver loop de folga semanal abaixo).
+    dias.forEach((d,i)=>{
+      // Se a própria segunda é feriado, quem trabalha nela já foi decidido pela equipe do
+      // feriado (acima) — não sobrepor essa escolha manual automaticamente; validar() sinaliza
+      // o conflito (domingo trabalhado sem folga na segunda) para o Stênio decidir.
+      if(d.dow!==1||i===0||dias[i-1].dow!==0||d.fer) return;
+      const domIso=dias[i-1].iso;
+      cs.forEach(c=>{ if(E[c.id][d.iso].s==='T'&&trabalha(E[c.id][domIso])) E[c.id][d.iso].s='F'; });
+    });
+    for(const sem of semanas(dias)){
+      // Regime 5x2 (23/11): semana cheia (7 dias) precisa de 2 folgas; semana "completa"
+      // (>=4 dias, pode ser borda do mês) precisa de pelo menos 1. Domingo (fase) e a
+      // segunda obrigatória (regra acima), quando caem nessa semana, já contam para a conta.
+      const completa=sem.dias.length>=4;
+      const necessario=sem.dias.length>=7?2:1;
+      const urg=c=>{ let m=Infinity; for(const d of sem.dias){ if(d.dow===0||d.fer||E[c.id][d.iso].s!=='T') continue; const {b,a}=sequencia(E[c.id],dias,dias.indexOf(d)); m=Math.min(m,Math.max(0,b-4)+Math.max(0,a-4)); } return m===Infinity?0:m; };
+      const ordSem=[...ord].sort((x,y)=>urg(y)-urg(x));
+      for(const c of ordSem){
+        if(sem.dias.some(d=>E[c.id][d.iso].s==='V')) continue;
+        if(!completa&&urg(c)<=0) continue;
+        const jaTem=sem.dias.filter(d=>ehFolga(E[c.id][d.iso])).length;
+        // semana incompleta: a folga é um extra de alívio (1, igual já era antes), não a
+        // obrigação cheia de 2 — por isso o alvo aqui é "mais 1", não "necessario".
+        const alvo=completa?necessario:jaTem+1;
+        let faltam=alvo-jaTem;
+        for(let n=0;n<faltam;n++){
+          let best=null,bs=Infinity;
+          for(const d of sem.dias){ if(d.dow===0||d.fer||E[c.id][d.iso].s!=='T') continue; const sc=pontuar(E,dias,loja,cs,c,d); if(sc<bs){bs=sc;best=d;} }
+          // na semana incompleta a folga é um extra, não obrigação legal: não vale a pena
+          // furar a cobertura mínima só para aliviar uma sequência (por isso só na cheia).
+          if(best&&(completa||!quebraCobertura(loja,E,cs,best,c))) E[c.id][best.iso].s='F';
+          else break;
+        }
+      }
+    }
+    // Limite duro de 7 dias seguidos trabalhando, sem exceção (decisão de 23/11): se mesmo
+    // com as 2 folgas semanais e a segunda obrigatória ainda sobrar uma sequência de 8+ dias
+    // (ex.: borda de mês, ou domingo trabalhado longe das folgas da semana), força uma folga
+    // extra no 8º dia para nunca estourar o limite. Isso tem prioridade sobre a cobertura
+    // mínima (que é configurável, não é lei) — mesmo princípio já usado no domingo/segunda.
+    for(const c of ord){
+      const row=E[c.id]; let streak=0;
+      for(const d of dias){
+        if(row[d.iso].s==='V'){ streak=0; continue; }
+        if(trabalha(row[d.iso])){ streak++; if(streak>7){ row[d.iso].s='F'; streak=0; } }
+        else streak=0;
+      }
+    }
+    const uteis=dias.filter(d=>d.dow>=1&&d.dow<=5&&!d.fer);
+    for(const c of ord){
+      if(!(c.saldo>0)) continue;
+      const full=Math.floor(c.saldo/MIN_DIA); let blocos=Math.floor((c.saldo-full*MIN_DIA)/60);
+      for(let n=0;n<full;n++){
+        let best=null,bs=Infinity;
+        for(const d of uteis){ if(E[c.id][d.iso].s!=='T') continue;
+          let sc=pontuar(E,dias,loja,cs,c,d);
+          if(dias.some(x=>x.wk===d.wk&&E[c.id][x.iso].s==='C')) sc+=40;
+          if(sc<bs){bs=sc;best=d;} }
+        if(!best) break; E[c.id][best.iso].s='C';
+      }
+      for(let pass=0;pass<2&&blocos>0;pass++){
+        const cand=uteis.filter(d=>{const x=E[c.id][d.iso];return pass===0?x.s==='T':(x.s==='P'&&x.p<120);});
+        if(!cand.length) continue;
+        const n=Math.min(blocos,cand.length), step=cand.length/n;
+        for(let i=0;i<n;i++){ const x=E[c.id][cand[Math.floor(i*step+step/2)].iso]; x.s='P'; x.p=(x.p||0)+60; blocos--; }
+      }
+    }
+  }
+  state.escalas[state.mes]=E; state.dirty=false; save();
+}
+
+/* validação */
+function validar(){
+  const E=state.escalas[state.mes]; const dias=diasDoMes(state.mes);
+  const r={cob:{},cel:{},lista:{},colab:{}};
+  if(!E) return r;
+  for(const loja of state.lojas){
+    const cs=state.colabs.filter(c=>c.loja===loja.id); const L=r.lista[loja.id]=[];
+    cs.forEach(c=>{ if(!E[c.id]){ E[c.id]={}; } dias.forEach(d=>{ if(!E[c.id][d.iso]) E[c.id][d.iso]={s:emFerias(c,d.iso)?'V':'T',p:0}; }); });
+    for(const d of dias){
+      regrasDoDia(loja,d).forEach(regra=>{
+        const cnt=contarRegra(E,cs,d,regra), min=regra.min, ok=cnt>=min;
+        r.cob[loja.id+'|'+d.iso+'|'+regra.janela+'|'+regra.papel]={cnt,min,ok};
+        if(!ok) L.push({n:'e',k:'cob',t:`${fmtD(d.iso)} (${WDL[d.dow]}): ${rotuloRegra(regra)} com ${cnt} de ${min} no mínimo.`});
+      });
+    }
+    for(const c of cs){
+      const row=E[c.id]; const info=r.colab[c.id]={err:0,warn:0};
+      for(const sem of semanas(dias)){
+        if(sem.dias.length<4||sem.dias.some(d=>row[d.iso].s==='V')) continue;
+        // Regime 5x2 (23/11): semana cheia (7 dias) precisa de 2 folgas semanais; semana
+        // na borda do mês (4-6 dias visíveis) precisa de pelo menos 1.
+        const necessario=sem.dias.length>=7?2:1;
+        const temFolgas=sem.dias.filter(d=>row[d.iso].s==='F').length;
+        if(temFolgas<necessario){ info.err++; sem.dias.forEach(d=>{ if(trabalha(row[d.iso])) r.cel[c.id+'|'+d.iso]='warn'; });
+          L.push({n:'e',k:'reg',t:`${c.nome}: semana de ${fmtD(sem.dias[0].iso)} com ${temFolgas} de ${necessario} folga(s) semanal(is).`}); }
+      }
+      // Domingo (23/11): regra única para todo mundo — não pode trabalhar em 2 domingos seguidos.
+      const doms=dias.filter(d=>d.dow===0);
+      for(let i=1;i<doms.length;i++){
+        const w=j=>trabalha(row[doms[j].iso]);
+        if(w(i)&&w(i-1)){ info.err++; r.cel[c.id+'|'+doms[i].iso]='err'; L.push({n:'e',k:'reg',t:`${c.nome}: trabalha nos domingos ${fmtD(doms[i-1].iso)} e ${fmtD(doms[i].iso)} seguidos.`}); }
+      }
+      // Segunda obrigatória após domingo trabalhado (23/11): pega também ajustes manuais
+      // que quebrem a regra, não só o que o gerador produz.
+      dias.forEach((d,i)=>{
+        if(d.dow!==1||i===0||dias[i-1].dow!==0) return;
+        const domIso=dias[i-1].iso;
+        if(row[domIso].s!=='V'&&trabalha(row[domIso])&&trabalha(row[d.iso])){
+          info.err++; r.cel[c.id+'|'+d.iso]='err';
+          L.push({n:'e',k:'reg',t:`${c.nome}: trabalhou no domingo ${fmtD(domIso)} mas não folgou na segunda ${fmtD(d.iso)} seguinte.`});
+        }
+      });
+      // Limite duro de 7 dias seguidos trabalhando (23/11, sem exceção) — o gerador já
+      // evita isso sozinho; esta checagem pega ajustes manuais que estourem o limite.
+      let run=0;
+      dias.forEach((d,i)=>{ if(trabalha(row[d.iso])) run++; else run=0;
+        if(run>7){ r.cel[c.id+'|'+d.iso]='err';
+          const next=dias[i+1]; if(!next||!trabalha(row[next.iso])){ info.err++; L.push({n:'e',k:'seq',t:`${c.nome}: ${run} dias seguidos de trabalho até ${fmtD(d.iso)} (acima do limite de 7).`}); } } });
+      const plan=dias.reduce((s,d)=>s+(row[d.iso].s==='C'?MIN_DIA:row[d.iso].s==='P'?row[d.iso].p:0),0);
+      info.plan=plan; info.resto=(c.saldo||0)-plan;
+      // só avisa "passou do saldo" se algo FOI planejado (plan>0); saldo negativo sem
+      // nenhuma folga planejada não é um erro de planejamento, é só o colaborador devendo horas.
+      if(info.plan>0&&info.resto<0) L.push({n:'w',k:'bh',t:`${c.nome}: compensação planejada passa do saldo em ${fmtH(-info.resto)}.`});
+      else if(info.resto>=60) L.push({n:'i',k:'bh',t:`${c.nome}: ${fmtH(info.resto)} do banco de horas ficaram sem planejamento.`});
+    }
+  }
+  return r;
+}
+
+/* render */
+const $=s=>document.querySelector(s);
+const main=$('#main');
+function render(){
+  $('#mes').value=state.mes;
+  $('#loja').innerHTML=state.lojas.map(l=>`<option value="${l.id}"${l.id===ui.loja?' selected':''}>${esc(l.nome)}</option>`).join('');
+  document.querySelectorAll('.tab').forEach(b=>b.setAttribute('aria-selected',b.dataset.tab===ui.tab));
+  $('#loja').parentElement.style.display=(ui.tab==='escala'||ui.tab==='banco')?'':'none';
+  const v=validar();
+  main.innerHTML=(state.dirty&&state.escalas[state.mes]?`<div class="banner no-print"><span>Equipes, cobertura, saldos ou feriados mudaram depois da última geração.</span><button class="btn" data-act="gerar">Gerar escala novamente</button></div>`:'')
+    +({escala:viewEscala,equipes:viewEquipes,banco:viewBanco,regras:viewRegras}[ui.tab])(v);
+}
+function viewEscala(v){
+  const E=state.escalas[state.mes]; const [y,m]=state.mes.split('-').map(Number);
+  if(!E) return `<div class="empty"><h2>Nenhuma escala para ${MESES[m-1]} de ${y}</h2><p>A escala é gerada a partir das equipes, da cobertura mínima, das regras de domingo, das férias e do banco de horas do mês anterior. Depois você ajusta qualquer dia clicando nele.</p><button class="btn primary" data-act="gerar">Gerar escala de ${MESES[m-1]}</button></div>`;
+  const loja=state.lojas.find(l=>l.id===ui.loja); const dias=diasDoMes(state.mes);
+  const cs=state.colabs.filter(c=>c.loja===loja.id);
+  const L=v.lista[loja.id]||[];
+  const nCob=L.filter(x=>x.k==='cob').length, nReg=L.filter(x=>x.k==='reg').length, nSeq=L.filter(x=>x.k==='seq').length;
+  const totF=cs.reduce((s,c)=>s+dias.filter(d=>E[c.id][d.iso].s==='C').length,0);
+  const totP=cs.reduce((s,c)=>s+dias.reduce((a,d)=>a+(E[c.id][d.iso].s==='P'?E[c.id][d.iso].p:0),0),0);
+  let h=`<div class="summary">
+    <span class="item ${nCob?'bad':'good'}"><span class="big">${nCob}</span>dias com cobertura abaixo do mínimo</span>
+    <span class="item ${nReg?'bad':'good'}"><span class="big">${nReg}</span>regras de folga quebradas</span>
+    <span class="item ${nSeq?'bad':'good'}"><span class="big">${nSeq}</span>sequências acima de 7 dias</span>
+    <span class="item"><span class="big">${totF}</span>folgas de banco de horas</span>
+    <span class="item"><span class="big">${fmtH(totP)}</span>em horas parciais</span></div>
+  <div class="legend"><span><b class="chip mk-F">F</b>Folga semanal</span><span><b class="chip mk-C">C</b>Folga compensatória</span><span><b class="chip mk-P">−1h</b>Saída antecipada (turno 1) ou entrada mais tarde (turno 2)</span><span><b class="chip mk-V">Fér</b>Férias</span><span>Toque em um dia para alterar.</span></div>
+  <div class="grid-wrap"><table class="grid"><thead><tr><th class="name">${esc(loja.nome)}</th>`;
+  for(const d of dias) h+=`<th class="${d.dow===0?'sun':''}"><span class="wd">${WD[d.dow]}</span><span class="dn">${pad(d.d)}</span>${d.fer?'<span class="fer">feriado</span>':''}</th>`;
+  h+='</tr></thead><tbody>';
+  for(const t of [1,2]){
+    const grp=cs.filter(c=>c.turno===t);
+    h+=`<tr class="grp"><td class="name" colspan="1"><span class="bar" style="background:var(--t${t})"></span>${NOME_TURNO[t]}</td><td colspan="${dias.length}" style="text-align:left;color:var(--muted);font-weight:500">seg-sex ${hm(TURNOS.semana[t].ini)}–${hm(TURNOS.semana[t].fim)} · sáb ${hm(TURNOS.sabado[t].ini)}–${hm(TURNOS.sabado[t].fim)} · dom/feriado ${hm(TURNOS.domingo[t].ini)}–${hm(TURNOS.domingo[t].fim)}. ${grp.length} pessoas.</td></tr>`;
+    for(const c of grp){
+      const inf=v.colab[c.id]||{err:0,warn:0};
+      h+=`<tr class="t${t}"><td class="name${inf.err?' flag':''}"><span class="n">${esc(c.nome)}</span><span class="m"><span>${esc(c.funcao)}</span>${c.saldo>0?`<span class="bh">BH ${fmtH(c.saldo)}</span>`:''}</span></td>`;
+      for(const d of dias){
+        const x=E[c.id][d.iso]; const cls=v.cel[c.id+'|'+d.iso]||'';
+        const lab=x.s==='F'?'F':x.s==='C'?'C':x.s==='V'?'Fér':x.s==='P'?'−'+(x.p/60)+'h':'';
+        h+=`<td class="cell s-${x.s} ${d.dow===0?'sun':''} ${cls}"><button data-act="cell" data-c="${c.id}" data-d="${d.iso}" aria-label="${esc(c.nome)}, ${fmtD(d.iso)}: ${esc(horario(c,d,x))}">${lab?`<b class="chip mk-${x.s}">${lab}</b>`:'<span class="mark"></span>'}</button></td>`;
+      }
+      h+='</tr>';
+    }
+  }
+  h+='</tbody><tfoot>';
+  const grupos=[], vistos=new Set();
+  ['semana','sabado','domingo'].forEach(k=>aplicarPisoVendedor(loja.cob[k]).forEach(regra=>{
+    const chave=regra.janela+'|'+regra.papel;
+    if(!vistos.has(chave)){ vistos.add(chave); grupos.push({janela:regra.janela,papel:regra.papel}); }
+  }));
+  grupos.forEach(g=>{
+    h+=`<tr><td class="name">Presentes: ${esc(rotuloRegra(g))}</td>`;
+    for(const d of dias){
+      const regra=regrasDoDia(loja,d).find(r=>r.janela===g.janela&&r.papel===g.papel);
+      if(!regra){ h+='<td class="na">—</td>'; continue; }
+      const r=v.cob[loja.id+'|'+d.iso+'|'+g.janela+'|'+g.papel];
+      h+=`<td class="${r.ok?'':'short'}">${r.cnt}/${r.min}</td>`;
+    }
+    h+='</tr>';
+  });
+  h+='</tfoot></table></div>';
+  h+=`<section class="issues"><h2>${L.length?'Pontos para revisar':'Tudo certo com as regras nesta loja'}</h2>${L.length?'<ul>'+L.map(x=>`<li class="${x.n==='e'?'':x.n}">${esc(x.t)}</li>`).join('')+'</ul>':''}</section>`;
+  return h;
+}
+const PAPEIS=[['_total','Total (sem separar por função)'],['vendedor','Vendedor(a)'],['caixa','Caixa'],['estoquista','Estoquista'],['gerente','Gerente']];
+const JANELAS=[['geral','Loja toda (os 2 turnos)'],['turno1','Só turno 1'],['turno2','Só turno 2']];
+function viewEquipes(){
+  let h='';
+  for(const loja of state.lojas){
+    const cs=state.colabs.filter(c=>c.loja===loja.id).sort((a,b)=>a.turno-b.turno||a.nome.localeCompare(b.nome));
+    const grupoCob=(chave,titulo)=>{
+      const regras=loja.cob[chave]||(loja.cob[chave]=[]);
+      let hh=`<div class="cov-grupo"><h3>${titulo}</h3><div class="cov-lista">`;
+      regras.forEach((r,i)=>{
+        hh+=`<div class="cov-regra">
+          <select data-act="cobPapel" data-l="${loja.id}" data-g="${chave}" data-i="${i}">${PAPEIS.map(p=>`<option value="${p[0]}"${p[0]===r.papel?' selected':''}>${p[1]}</option>`).join('')}</select>
+          <select data-act="cobJanela" data-l="${loja.id}" data-g="${chave}" data-i="${i}">${JANELAS.map(j=>`<option value="${j[0]}"${j[0]===r.janela?' selected':''}>${j[1]}</option>`).join('')}</select>
+          pelo menos <input type="number" min="0" max="30" value="${r.min}" data-act="cobMin" data-l="${loja.id}" data-g="${chave}" data-i="${i}" aria-label="Mínimo">
+          <button data-act="cobDel" data-l="${loja.id}" data-g="${chave}" data-i="${i}" aria-label="Remover regra">×</button>
+        </div>`;
+      });
+      hh+=`</div><button class="btn" data-act="cobAdd" data-l="${loja.id}" data-g="${chave}">+ adicionar regra</button></div>`;
+      return hh;
+    };
+    h+=`<section class="store"><div class="store-head"><h2>${esc(loja.nome)}</h2></div>
+    <div class="cov-grupos">${grupoCob('semana','Segunda a sexta')}${grupoCob('sabado','Sábado')}${grupoCob('domingo','Domingo e feriado')}</div>
+    <div class="tbl-wrap"><table class="list"><thead><tr><th>Colaborador</th><th>Função</th><th>Turno</th><th>Sexo</th><th>Loja</th><th>Férias no período</th></tr></thead><tbody>`;
+    for(const c of cs){
+      h+=`<tr><td><b>${esc(c.nome)}</b></td><td>${esc(c.funcao)}</td>
+      <td><span class="seg"><button class="b1" aria-pressed="${c.turno===1}" data-act="turno" data-c="${c.id}" data-t="1">Turno 1</button><button class="b2" aria-pressed="${c.turno===2}" data-act="turno" data-c="${c.id}" data-t="2">Turno 2</button></span></td>
+      <td><span class="seg"><button class="bf" aria-pressed="${c.sexo==='F'}" data-act="sexo" data-c="${c.id}" data-s="F">F</button><button class="bf" aria-pressed="${c.sexo==='M'}" data-act="sexo" data-c="${c.id}" data-s="M">M</button></span></td>
+      <td><select data-act="moveloja" data-c="${c.id}">${state.lojas.map(l=>`<option value="${l.id}"${l.id===c.loja?' selected':''}>${esc(l.nome)}</option>`).join('')}</select></td>
+      <td class="muted">${(c.ferias||[]).length?c.ferias.map(([a,b])=>fmtD(a)+' a '+fmtD(b)).join(', '):'—'}</td></tr>`;
+    }
+    h+='</tbody></table></div></section>';
+  }
+  return h+`<p class="muted">Na versão final, nomes, funções e férias virão do Pontomais. A divisão por turno e a cobertura mínima continuam sendo definidas aqui. A regra de domingo (1 sim, 1 não) é igual para todo mundo e não é mais configurável por pessoa.</p>`;
+}
+function viewBanco(v){
+  const loja=state.lojas.find(l=>l.id===ui.loja);
+  if(!loja) return `<div class="empty"><h2>Nenhuma loja cadastrada ainda</h2><p>Cadastre uma loja e uma equipe na aba "Equipes e cobertura" primeiro.</p></div>`;
+  const E=state.escalas[state.mes]; const dias=diasDoMes(state.mes);
+  const cs=state.colabs.filter(c=>c.loja===loja.id).sort((a,b)=>a.turno-b.turno||a.nome.localeCompare(b.nome));
+  const [y,m]=state.mes.split('-').map(Number); const ant=MESES[(m+10)%12];
+  let h=`<section class="sec" style="max-width:none"><h2>${esc(loja.nome)}: compensação em ${MESES[m-1]} do saldo de ${ant}</h2>
+  <p class="muted" style="max-width:72ch">Cada 8h24 de saldo vira uma folga compensatória inteira. O que sobrar vira blocos de 1 hora, de segunda a sexta: o turno 1 sai mais cedo e o turno 2 entra mais tarde, sempre na faixa em que os dois turnos se cruzam (10:56 às 18:04). Sobras menores que 1 hora passam para o mês seguinte. Digite o saldo como 9:10 ou 9h10.</p>
+  <div class="tbl-wrap"><table class="list"><thead><tr><th>Colaborador</th><th>Turno</th><th class="num">Saldo de ${ant}</th><th class="num">Folgas inteiras</th><th class="num">Horas parciais</th><th class="num">Total planejado</th><th class="num">Fica para o próximo mês</th></tr></thead><tbody>`;
+  for(const c of cs){
+    let nc=0,np=0; if(E&&E[c.id]) dias.forEach(d=>{const x=E[c.id][d.iso]; if(x.s==='C') nc++; if(x.s==='P') np+=x.p;});
+    const inf=v.colab[c.id]; const resto=E?(c.saldo||0)-nc*MIN_DIA-np:null;
+    h+=`<tr><td><b>${esc(c.nome)}</b></td><td>Turno ${c.turno}</td><td class="num"><input class="saldo" value="${fmtH(c.saldo||0).replace('h',':').replace(/:$/,':00')}" data-act="saldo" data-c="${c.id}" aria-label="Saldo de ${esc(c.nome)}"></td>
+    <td class="num">${E?nc:'—'}</td><td class="num">${E?fmtH(np):'—'}</td><td class="num">${E?fmtH(nc*MIN_DIA+np):'—'}</td><td class="num ${resto<0?'neg':''}">${E?fmtH(resto):'—'}</td></tr>`;
+  }
+  return h+`</tbody></table></div></section><p class="muted">Na versão final, o saldo será lido do banco de horas do Pontomais ao fechar o mês.</p>`;
+}
+// Equipe de cada feriado (23/11): quem trabalha em feriado e em qual turno é escolhido aqui
+// pelo Stênio, feriado a feriado — não vem do turno normal nem do revezamento de domingo.
+function viewFeriadoEquipes(){
+  if(!state.feriados.length) return '';
+  let h=`<section class="sec" style="max-width:none"><h2>Equipe de cada feriado</h2>
+  <p class="muted" style="max-width:72ch">Em feriado só quem está marcado como Turno 1 ou Turno 2 aqui embaixo trabalha (normalmente metade de cada turno) — nos horários de feriado das regras acima. Quem fica em "Não trabalha" folga nesse dia, e essa folga já conta como uma das folgas da semana da pessoa.</p>`;
+  for(const iso of state.feriados.slice().sort()){
+    const eq=state.feriadoEquipe[iso]||{};
+    h+=`<h3 style="margin:18px 0 8px">${esc(iso.split('-').reverse().join('/'))}</h3>`;
+    for(const loja of state.lojas){
+      const cs=state.colabs.filter(c=>c.loja===loja.id).sort((a,b)=>a.turno-b.turno||a.nome.localeCompare(b.nome));
+      h+=`<div class="tbl-wrap" style="margin-bottom:14px"><table class="list"><thead><tr><th>${esc(loja.nome)}</th><th>Turno normal</th><th>Escalação no feriado</th></tr></thead><tbody>`;
+      for(const c of cs){
+        const t=eq[c.id]||0;
+        h+=`<tr><td>${esc(c.nome)}</td><td class="muted">Turno ${c.turno}</td><td><span class="seg">
+          <button class="bf" aria-pressed="${t===0}" data-act="ferEquipe" data-f="${iso}" data-c="${c.id}" data-t="0">Não trabalha</button>
+          <button class="b1" aria-pressed="${t===1}" data-act="ferEquipe" data-f="${iso}" data-c="${c.id}" data-t="1">Turno 1</button>
+          <button class="b2" aria-pressed="${t===2}" data-act="ferEquipe" data-f="${iso}" data-c="${c.id}" data-t="2">Turno 2</button>
+        </span></td></tr>`;
+      }
+      h+='</tbody></table></div>';
+    }
+  }
+  return h+'</section>';
+}
+function viewRegras(){
+  const [y,m]=state.mes.split('-').map(Number);
+  return `<section class="sec"><h2>Regras usadas para gerar a escala</h2><ul class="rules">
+  <li>Jornada de 42 horas semanais em 5x2: cinco dias de 8h24 com 1 hora de almoço e duas folgas por semana (segunda a domingo).</li>
+  <li>Turno 1 e turno 2 variam pelo tipo de dia: seg-sex das ${hm(TURNOS.semana[1].ini)}–${hm(TURNOS.semana[1].fim)} (turno 1) e ${hm(TURNOS.semana[2].ini)}–${hm(TURNOS.semana[2].fim)} (turno 2); sábado das ${hm(TURNOS.sabado[1].ini)}–${hm(TURNOS.sabado[1].fim)} e ${hm(TURNOS.sabado[2].ini)}–${hm(TURNOS.sabado[2].fim)}; domingo e feriado das ${hm(TURNOS.domingo[1].ini)}–${hm(TURNOS.domingo[1].fim)} e ${hm(TURNOS.domingo[2].ini)}–${hm(TURNOS.domingo[2].fim)}.</li>
+  <li>Domingo: todo mundo folga um domingo sim, outro não (regra única, sem diferença por sexo).</li>
+  <li>Quem trabalha no domingo folga obrigatoriamente na segunda-feira seguinte.</li>
+  <li>Nenhum colaborador pode trabalhar mais de 7 dias seguidos sem folga — limite rígido, sem exceção.</li>
+  <li>Feriado não segue o revezamento automático: a equipe que trabalha (metade de um turno, metade de outro, por exemplo) é escolhida feriado a feriado na aba "Regras e feriados". Quem não está na equipe do feriado folga nesse dia.</li>
+  <li>Nunca pode haver só 1 vendedor(a) trabalhando na loja — mínimo de 2 sempre, em qualquer dia e horário.</li>
+  <li>A cobertura mínima de cada loja e turno é respeitada sempre que possível. Quando não dá, o dia aparece em vermelho no rodapé da escala.</li>
+  <li>Folgas de semana são distribuídas para evitar sexta e sábado, preferindo segunda a quarta.</li>
+  <li>Férias bloqueiam o colaborador; a semana com férias não recebe folga semanal.</li>
+  <li>O banco de horas do mês anterior é compensado no mês planejado: folgas inteiras de segunda a sexta e o restante em blocos de 1 hora (no máximo 2 horas por dia).</li>
+  <li>O horário de almoço fica a combinar entre a equipe.</li></ul>
+  <p class="muted">Regras trabalhistas e da convenção coletiva dos comerciários devem ser validadas pelo jurídico antes do uso.</p></section>
+  <section class="sec"><h2>Feriados</h2><p class="muted">Feriados usam o horário e a cobertura mínima de domingo, mas a equipe que trabalha é escolhida feriado a feriado (ver "Equipe de cada feriado" abaixo) — não é mais o revezamento automático de domingo.</p>
+  <div class="fer-list">${state.feriados.slice().sort().map(f=>`<span>${f.split('-').reverse().join('/')}<button data-act="delfer" data-f="${f}" aria-label="Remover feriado ${f}">×</button></span>`).join('')||'<span class="muted">Nenhum feriado cadastrado.</span>'}</div>
+  <div class="row"><label class="field">Novo feriado<input type="date" id="novofer" value="${y}-${pad(m)}-01"></label><button class="btn" data-act="addfer">Adicionar feriado</button></div></section>
+  ${viewFeriadoEquipes()}
+  <section class="sec"><h2>Integração com o Pontomais</h2><p>Nesta fase a integração será somente de leitura: colaboradores, lojas, funções, férias, afastamentos e saldo do banco de horas. Nada é alterado no Pontomais. O token ficará guardado num Google Apps Script intermediário, nunca nesta página.</p></section>
+  <section class="sec"><h2>Conta e dados</h2><p class="muted">Os dados ficam salvos no servidor (Google), compartilhados entre quem acessar com a senha. Este botão apaga TUDO (lojas, colaboradores, escalas, feriados) desta conta — não dá pra desfazer.</p><button class="btn" data-act="reset">Apagar todos os dados desta conta</button></section>`;
+}
+
+/* popover */
+const pop=$('#pop');
+function openPop(btn){
+  const c=state.colabs.find(x=>x.id===btn.dataset.c); const iso=btn.dataset.d;
+  const d=diasDoMes(state.mes).find(x=>x.iso===iso); const x=state.escalas[state.mes][c.id][iso];
+  ui.pop={c:c.id,d:iso};
+  const opt=(k,s,p,lab,chip)=>`<button data-act="set" data-s="${s}" data-p="${p}" aria-pressed="${x.s===s&&(s!=='P'||x.p===p)}">${chip}${lab}</button>`;
+  pop.innerHTML=`<h3>${esc(c.nome)}</h3><div class="sub">${WDL[d.dow]}, ${fmtD(iso)}${d.fer?', feriado':''}. ${esc(horario(c,d,x))}.</div>`+
+    (x.s==='V'?`<p class="note">Férias vêm do cadastro (no futuro, do Pontomais) e não podem ser alteradas aqui.</p>`:
+    `<div class="opts">${opt('T','T',0,'Trabalha','<b class="chip" style="background:var(--sheet2)">•</b>')}${opt('F','F',0,'Folga semanal','<b class="chip mk-F">F</b>')}${opt('C','C',0,'Folga compensatória','<b class="chip mk-C">C</b>')}${especial(d)?'':opt('P','P',60,c.turno===1?'Sai 1h mais cedo':'Entra 1h mais tarde','<b class="chip mk-P">−1h</b>')+opt('P','P',120,c.turno===1?'Sai 2h mais cedo':'Entra 2h mais tarde','<b class="chip mk-P">−2h</b>')}</div>
+    <p class="note">Folgas compensatórias e horas parciais descontam do banco de horas.</p>`);
+  pop.classList.add('open');
+  const r=btn.getBoundingClientRect(); const w=pop.offsetWidth,hh=pop.offsetHeight;
+  let left=Math.min(Math.max(8,r.left+r.width/2-w/2),window.innerWidth-w-8);
+  let top=r.bottom+6; if(top+hh>window.innerHeight-8) top=Math.max(8,r.top-hh-6);
+  pop.style.left=left+'px'; pop.style.top=top+'px';
+  const first=pop.querySelector('button'); if(first) first.focus({preventScroll:true});
+}
+function closePop(){ pop.classList.remove('open'); ui.pop=null; }
+
+/* eventos */
+document.addEventListener('click',e=>{
+  const el=e.target.closest('[data-act],.tab'); 
+  if(!el){ if(!pop.contains(e.target)) closePop(); return; }
+  if(el.classList.contains('tab')){ ui.tab=el.dataset.tab; closePop(); render(); return; }
+  const a=el.dataset.act;
+  if(a==='cell'){ e.stopPropagation(); openPop(el); return; }
+  if(a==='set'&&ui.pop){ const x=state.escalas[state.mes][ui.pop.c][ui.pop.d]; x.s=el.dataset.s; x.p=x.s==='P'?+el.dataset.p:0; save(); closePop(); render(); return; }
+  if(a==='gerar'){ doGerar(); return; }
+  if(a==='turno'){ state.colabs.find(c=>c.id===el.dataset.c).turno=+el.dataset.t; markDirty(); return; }
+  if(a==='sexo'){ state.colabs.find(c=>c.id===el.dataset.c).sexo=el.dataset.s; markDirty(); return; }
+  if(a==='cobAdd'){ const loja=state.lojas.find(l=>l.id===el.dataset.l); (loja.cob[el.dataset.g]=loja.cob[el.dataset.g]||[]).push({janela:'geral',papel:'_total',min:0}); markDirty(); return; }
+  if(a==='cobDel'){ const loja=state.lojas.find(l=>l.id===el.dataset.l); loja.cob[el.dataset.g].splice(+el.dataset.i,1); markDirty(); return; }
+  if(a==='delfer'){ state.feriados=state.feriados.filter(f=>f!==el.dataset.f); delete state.feriadoEquipe[el.dataset.f]; markDirty(); return; }
+  if(a==='addfer'){ const v=$('#novofer').value; if(v&&!state.feriados.includes(v)) state.feriados.push(v); markDirty(); return; }
+  if(a==='ferEquipe'){
+    const f=el.dataset.f, c=el.dataset.c, t=+el.dataset.t;
+    state.feriadoEquipe[f]=state.feriadoEquipe[f]||{};
+    if(t===0) delete state.feriadoEquipe[f][c]; else state.feriadoEquipe[f][c]=t;
+    markDirty(); return;
+  }
+  if(a==='reset'){ if(confirm('Apagar TODOS os dados desta conta (lojas, colaboradores, escalas, feriados)? Não dá pra desfazer.')){ state=defaultState(); ui.loja=null; save(); render(); } return; }
+});
+document.addEventListener('change',e=>{
+  const el=e.target; const a=el.dataset.act;
+  if(a==='cobPapel'){ state.lojas.find(l=>l.id===el.dataset.l).cob[el.dataset.g][+el.dataset.i].papel=el.value; markDirty(); }
+  if(a==='cobJanela'){ state.lojas.find(l=>l.id===el.dataset.l).cob[el.dataset.g][+el.dataset.i].janela=el.value; markDirty(); }
+  if(a==='cobMin'){ state.lojas.find(l=>l.id===el.dataset.l).cob[el.dataset.g][+el.dataset.i].min=Math.max(0,+el.value||0); markDirty(); }
+  if(a==='moveloja'){ state.colabs.find(c=>c.id===el.dataset.c).loja=el.value; markDirty(); }
+  if(a==='saldo'){ state.colabs.find(c=>c.id===el.dataset.c).saldo=parseSaldo(el.value); markDirty(); }
+});
+document.addEventListener('keydown',e=>{ if(e.key==='Escape') closePop(); });
+window.addEventListener('resize',closePop);
+$('#mes').addEventListener('change',e=>{ if(e.target.value){ state.mes=e.target.value; save(); closePop(); render(); } });
+$('#loja').addEventListener('change',e=>{ ui.loja=e.target.value; render(); });
+$('#gerar').addEventListener('click',doGerar);
+$('#imprimir').addEventListener('click',()=>{ try{ window.print(); }catch(err){} });
+function markDirty(){ state.dirty=true; save(); render(); }
+function doGerar(){
+  if(state.escalas[state.mes]&&!confirm('Gerar de novo substitui a escala atual deste mês, incluindo os ajustes manuais. Continuar?')) return;
+  gerar(); ui.tab='escala'; render();
+}
+/* ---- tela de login (23/11) ---- */
+const telaLogin=document.getElementById('login');
+const appEl=document.getElementById('app');
+const loginForm=document.getElementById('loginForm');
+const senhaInput=document.getElementById('senhaInput');
+const loginErr=document.getElementById('loginErr');
+const sairBtn=document.getElementById('sair');
+
+async function entrar(senha){
+  loginErr.textContent='Entrando...';
+  try{
+    const remoto=await buscarEstadoRemoto(senha);
+    state = remoto || defaultState();
+    state.feriadoEquipe = state.feriadoEquipe || {};
+    salvarSenha(senha);
+    try{ localStorage.setItem(LS_KEY,JSON.stringify(state)); }catch(e){}
+    ui.loja = state.lojas[0] ? state.lojas[0].id : null;
+    telaLogin.style.display='none';
+    appEl.style.display='';
+    render();
+  }catch(err){
+    loginErr.textContent='Senha incorreta ou sem conexão com o servidor. Tente de novo.';
+  }
+}
+loginForm.addEventListener('submit',e=>{ e.preventDefault(); entrar(senhaInput.value.trim()); });
+sairBtn.addEventListener('click',()=>{ limparSenha(); location.reload(); });
+
+const senhaCache=senhaSalva();
+if(senhaCache){ entrar(senhaCache); }
+else { telaLogin.style.display=''; appEl.style.display='none'; }
+})();
+</script>
+</body>
+</html>
