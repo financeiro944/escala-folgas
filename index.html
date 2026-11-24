@@ -107,6 +107,8 @@ td.cell button:hover{ background:var(--sheet2); }
 .mk-C{ background:var(--comp-soft); color:var(--comp); box-shadow:inset 0 0 0 1.5px var(--comp); }
 .mk-P{ background:var(--comp-soft); color:var(--comp); }
 .mk-V{ background:var(--vac-soft); color:var(--vac); }
+.mk-ok{ background:var(--part-soft); color:var(--part); }
+.mk-alerta{ background:var(--red-soft); color:var(--red); }
 :root[data-theme="dark"] .mk-F{ color:#1a0a0d; }
 @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]) .mk-F{ color:#1a0a0d; } }
 td.cell.err{ box-shadow:inset 0 0 0 2px var(--red); }
@@ -674,7 +676,7 @@ function viewEscala(v){
     <span class="item ${nSeq?'bad':'good'}"><span class="big">${nSeq}</span>sequências acima de 7 dias</span>
     <span class="item"><span class="big">${totF}</span>folgas de banco de horas</span>
     <span class="item"><span class="big">${fmtH(totP)}</span>em horas parciais</span></div>
-  <div class="legend"><span><b class="chip mk-T">T</b>Trabalha</span><span><b class="chip mk-F">F</b>Folga semanal</span><span><b class="chip mk-C">C</b>Folga compensatória</span><span><b class="chip mk-P">−1h</b>Saída antecipada (turno 1) ou entrada mais tarde (turno 2)</span><span><b class="chip mk-V">Fér</b>Férias</span><span>Toque em um dia para alterar.</span></div>
+  <div class="legend"><span><b class="chip mk-T">T</b>Trabalha</span><span><b class="chip mk-F">F</b>Folga semanal</span><span><b class="chip mk-C">C</b>Folga compensatória</span><span><b class="chip mk-P">−1h</b>Saída antecipada (turno 1) ou entrada mais tarde (turno 2)</span><span><b class="chip mk-V">Fér</b>Férias</span><span><b class="chip mk-ok">OK</b>Cobertura mínima atendida</span><span><b class="chip mk-alerta">⚠</b>Abaixo do mínimo</span><span>Toque em um dia para alterar.</span></div>
   <div class="grid-wrap"><table class="grid"><thead><tr><th class="name">${esc(loja.nome)}</th>`;
   for(const d of dias) h+=`<th class="${d.dow===0?'sun':''}"><span class="wd">${WD[d.dow]}</span><span class="dn">${pad(d.d)}</span>${d.fer?'<span class="fer">feriado</span>':''}</th>`;
   h+='</tr></thead><tbody>';
@@ -708,6 +710,18 @@ function viewEscala(v){
     }
     h+='</tr>';
   });
+  // Resumo visual por dia (24/11, pedido do Stênio): quadrinho verde "OK" quando TODAS as
+  // regras de cobertura daquele dia batem o mínimo (ou a equipe completa, que é o mesmo caso
+  // quando o mínimo = efetivo real); quadrinho de alerta quando alguma fica abaixo — a loja
+  // operando com menos gente do que deveria. "—" nos dias sem nenhuma regra (loja fechada).
+  h+=`<tr><td class="name">Cobertura do dia</td>`;
+  for(const d of dias){
+    const regrasDia=regrasDoDia(loja,d);
+    if(!regrasDia.length){ h+='<td class="na">—</td>'; continue; }
+    const todasOk=regrasDia.every(regra=>{ const r=v.cob[loja.id+'|'+d.iso+'|'+regra.janela+'|'+regra.papel]; return r&&r.ok; });
+    h+=`<td title="${todasOk?'Cobertura mínima atendida':'Cobertura abaixo do mínimo'}"><b class="chip ${todasOk?'mk-ok':'mk-alerta'}">${todasOk?'OK':'⚠'}</b></td>`;
+  }
+  h+='</tr>';
   h+='</tfoot></table></div>';
   h+=`<section class="issues"><h2>${L.length?'Pontos para revisar':'Tudo certo com as regras nesta loja'}</h2>${L.length?'<ul>'+L.map(x=>`<li class="${x.n==='e'?'':x.n}">${esc(x.t)}</li>`).join('')+'</ul>':''}</section>`;
   return h;
