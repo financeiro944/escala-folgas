@@ -362,6 +362,9 @@ function aplicarPisoVendedor(regras){
 function regrasDoDia(loja,d){ if(d.ferFechado) return []; return aplicarPisoVendedor(especial(d)?(loja.cob.domingo||[]):(d.dow===6?(loja.cob.sabado||[]):(loja.cob.semana||[]))); }
 function janelaIncluiTurno(janela,turno){ return janela==='geral'||(janela==='turno1'&&turno===1)||(janela==='turno2'&&turno===2); }
 function papelBate(papelRegra,papel){ return papelRegra==='_total'||papelRegra===papel; }
+// VR (24/11): colaborador(a) do caixa marcado como responsável pela loja quando a gerente não
+// está — conta como "gerente" pra cobertura mínima também (cobre quando a gerente folga).
+function papelBateOuVR(regra,c){ return papelBate(regra.papel,papelDe(c.funcao))||(regra.papel==='gerente'&&c.vr); }
 // Em feriado (23/11), quem trabalha e em qual turno vem da equipe escolhida pelo Stênio
 // (state.feriadoEquipe), não do turno normal do colaborador — usado para cobertura, pontuação
 // e para mostrar o horário certo na grade. Em qualquer outro dia, é só o turno normal mesmo.
@@ -369,8 +372,8 @@ function turnoDoDia(c,d){
   if(d.fer){ const eq=(state.feriadoEquipe&&state.feriadoEquipe[d.iso])||{}; if(eq[c.id]) return eq[c.id]; }
   return c.turno;
 }
-function contarRegra(E,cs,d,regra){ return cs.filter(o=>E[o.id]&&trabalha(E[o.id][d.iso])&&janelaIncluiTurno(regra.janela,turnoDoDia(o,d))&&papelBate(regra.papel,papelDe(o.funcao))).length; }
-function regrasQueContam(loja,d,c){ return regrasDoDia(loja,d).filter(regra=>janelaIncluiTurno(regra.janela,turnoDoDia(c,d))&&papelBate(regra.papel,papelDe(c.funcao))); }
+function contarRegra(E,cs,d,regra){ return cs.filter(o=>E[o.id]&&trabalha(E[o.id][d.iso])&&janelaIncluiTurno(regra.janela,turnoDoDia(o,d))&&papelBateOuVR(regra,o)).length; }
+function regrasQueContam(loja,d,c){ return regrasDoDia(loja,d).filter(regra=>janelaIncluiTurno(regra.janela,turnoDoDia(c,d))&&papelBateOuVR(regra,c)); }
 function quebraCobertura(loja,E,cs,d,c){ return regrasQueContam(loja,d,c).some(regra=>(contarRegra(E,cs,d,regra)-1)<regra.min); }
 function rotuloRegra(regra){ const jan=regra.janela==='geral'?'loja':regra.janela==='turno1'?'turno 1':'turno 2'; return regra.papel==='_total'?jan:regra.papel+' ('+jan+')'; }
 // usada só pelo gerador de domingo (que precisa de 1 número só): a regra "geral + todo mundo" do domingo
@@ -544,6 +547,20 @@ function gerar(){
         else streak=0;
       }
     }
+    // VR (24/11): quem for marcada como responsável pela loja na ausência da gerente nunca
+    // pode folgar no mesmo dia que a gerente — sempre uma das duas precisa estar na loja.
+    // Regra dura: corrige por cima de qualquer folga já decidida (a gerente nunca é mexida
+    // aqui, só a VR, presumindo que a folga da gerente é a mais "fixa" das duas).
+    {
+      const gerenteDaLoja=cs.find(c=>papelDe(c.funcao)==='gerente');
+      const vrDaLoja=cs.find(c=>c.vr);
+      if(gerenteDaLoja&&vrDaLoja&&gerenteDaLoja.id!==vrDaLoja.id){
+        dias.forEach(d=>{
+          const cGer=E[gerenteDaLoja.id][d.iso], cVr=E[vrDaLoja.id][d.iso];
+          if(cVr.s!=='V'&&ehFolga(cGer)&&ehFolga(cVr)) cVr.s='T';
+        });
+      }
+    }
     const uteis=dias.filter(d=>d.dow>=1&&d.dow<=5&&!d.fer);
     for(const c of ord){
       if(!(c.saldo>0)) continue;
@@ -644,6 +661,21 @@ function validar(){
       // nenhuma folga planejada não é um erro de planejamento, é só o colaborador devendo horas.
       if(info.plan>0&&info.resto<0) L.push({n:'w',k:'bh',t:`${c.nome}: compensação planejada passa do saldo em ${fmtH(-info.resto)}.`});
       else if(info.resto>=60) L.push({n:'i',k:'bh',t:`${c.nome}: ${fmtH(info.resto)} do banco de horas ficaram sem planejamento.`});
+    }
+    // VR (24/11): nunca pode folgar no mesmo dia que a gerente — pega ajustes manuais que
+    // quebrem isso, não só o que o gerador produz (que já corrige sozinho).
+    {
+      const gerenteDaLoja=cs.find(c=>papelDe(c.funcao)==='gerente');
+      const vrDaLoja=cs.find(c=>c.vr);
+      if(gerenteDaLoja&&vrDaLoja&&gerenteDaLoja.id!==vrDaLoja.id){
+        dias.forEach(d=>{
+          const cGer=E[gerenteDaLoja.id][d.iso], cVr=E[vrDaLoja.id][d.iso];
+          if(ehFolga(cGer)&&ehFolga(cVr)){
+            r.cel[vrDaLoja.id+'|'+d.iso]='err'; r.colab[vrDaLoja.id].err++;
+            L.push({n:'e',k:'reg',t:`${vrDaLoja.nome} (VR) e ${gerenteDaLoja.nome} (gerente) folgam juntas em ${fmtD(d.iso)} — a loja fica sem ninguém responsável.`});
+          }
+        });
+      }
     }
   }
   return r;
@@ -748,9 +780,10 @@ function viewEquipes(){
     };
     h+=`<section class="store"><div class="store-head"><h2>${esc(loja.nome)}</h2></div>
     <div class="cov-grupos">${grupoCob('semana','Segunda a sexta')}${grupoCob('sabado','Sábado')}${grupoCob('domingo','Domingo e feriado')}</div>
-    <div class="tbl-wrap"><table class="list"><thead><tr><th>Colaborador</th><th>Função</th><th>Turno</th><th>Sexo</th><th>Loja</th><th>Férias no período</th></tr></thead><tbody>`;
+    <div class="tbl-wrap"><table class="list"><thead><tr><th>Colaborador</th><th>Função</th><th>VR</th><th>Turno</th><th>Sexo</th><th>Loja</th><th>Férias no período</th></tr></thead><tbody>`;
     for(const c of cs){
       h+=`<tr><td><b>${esc(c.nome)}</b></td><td>${esc(c.funcao)}</td>
+      <td><button class="btn${c.vr?' primary':''}" data-act="vr" data-c="${c.id}" title="Responsável pela loja quando a gerente não está — nunca folga no mesmo dia que ela">${c.vr?'VR ✓':'Marcar VR'}</button></td>
       <td><span class="seg"><button class="b1" aria-pressed="${c.turno===1}" data-act="turno" data-c="${c.id}" data-t="1">Turno 1</button><button class="b2" aria-pressed="${c.turno===2}" data-act="turno" data-c="${c.id}" data-t="2">Turno 2</button></span></td>
       <td><span class="seg"><button class="bf" aria-pressed="${c.sexo==='F'}" data-act="sexo" data-c="${c.id}" data-s="F">F</button><button class="bf" aria-pressed="${c.sexo==='M'}" data-act="sexo" data-c="${c.id}" data-s="M">M</button></span></td>
       <td><select data-act="moveloja" data-c="${c.id}">${state.lojas.map(l=>`<option value="${l.id}"${l.id===c.loja?' selected':''}>${esc(l.nome)}</option>`).join('')}</select></td>
@@ -861,6 +894,13 @@ document.addEventListener('click',e=>{
   if(a==='gerar'){ doGerar(); return; }
   if(a==='turno'){ state.colabs.find(c=>c.id===el.dataset.c).turno=+el.dataset.t; markDirty(); return; }
   if(a==='sexo'){ state.colabs.find(c=>c.id===el.dataset.c).sexo=el.dataset.s; markDirty(); return; }
+  if(a==='vr'){
+    const alvo=state.colabs.find(c=>c.id===el.dataset.c);
+    const ligar=!alvo.vr;
+    // só 1 VR por loja (cobre a gerente dessa loja) — marcar outra pessoa desliga a anterior.
+    if(ligar) state.colabs.forEach(c=>{ if(c.loja===alvo.loja) c.vr=false; });
+    alvo.vr=ligar; markDirty(); return;
+  }
   if(a==='cobAdd'){ const loja=state.lojas.find(l=>l.id===el.dataset.l); (loja.cob[el.dataset.g]=loja.cob[el.dataset.g]||[]).push({janela:'geral',papel:'_total',min:0}); markDirty(); return; }
   if(a==='cobDel'){ const loja=state.lojas.find(l=>l.id===el.dataset.l); loja.cob[el.dataset.g].splice(+el.dataset.i,1); markDirty(); return; }
   if(a==='delfer'){ state.feriados=state.feriados.filter(f=>f.data!==el.dataset.f); delete state.feriadoEquipe[el.dataset.f]; markDirty(); return; }
