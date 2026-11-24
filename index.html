@@ -532,26 +532,32 @@ function gerar(){
         }
       }
     }
-    // VR e gerente (24/11): domingo já nasce sem coincidir (fase oposta, acima) — aqui cobre
-    // os outros dias da semana. Se as duas acabarem de folga no mesmo dia (seg-sáb), troca o
-    // dia da VR por outro que ela já trabalha na mesma semana, em vez de só cancelar a folga
-    // dela sem repor (isso já aconteceu e deixou a VR sem nenhuma folga no mês inteiro).
-    if(temParGerenteVr){
-      for(const sem of semanas(dias)){
-        for(const d of sem.dias){
-          const cGer=E[gerenteDaLoja.id][d.iso], cVr=E[vrDaLoja.id][d.iso];
-          if(d.dow===0||cVr.s==='V'||!ehFolga(cGer)||!ehFolga(cVr)) continue;
-          let melhor=null,bs=Infinity;
-          for(const d2 of sem.dias){
-            if(d2.iso===d.iso||d2.dow===0||d2.fer) continue;
-            if(E[vrDaLoja.id][d2.iso].s!=='T') continue;
-            if(ehFolga(E[gerenteDaLoja.id][d2.iso])) continue;
-            const sc=pontuar(E,dias,loja,cs,vrDaLoja,d2);
-            if(sc<bs){bs=sc;melhor=d2;}
+    // Correção de cobertura por troca de dia (24/11, generalizada — antes só cobria
+    // gerente/VR, agora vale pra qualquer papel com redundância: os 2 caixas do mesmo turno,
+    // os 2 vendedores, os 2 estoquistas etc). Depois da distribuição normal de folga, se um
+    // dia ficar abaixo do mínimo só porque 2+ pessoas do mesmo papel coincidiram de folga,
+    // tenta trocar a folga de uma delas pra outro dia da mesma semana em que ela já ia
+    // trabalhar — nunca cancela a folga sem repor (isso já aconteceu com a VR e zerou as
+    // folgas dela no mês inteiro, por isso a troca, não o cancelamento simples).
+    for(const sem of semanas(dias)){
+      for(const d of sem.dias){
+        if(d.dow===0||d.fer) continue;
+        for(const regra of regrasDoDia(loja,d)){
+          if(contarRegra(E,cs,d,regra)>=regra.min) continue;
+          const candidatas=cs.filter(o=>janelaIncluiTurno(regra.janela,turnoDoDia(o,d))&&papelBateOuVR(regra,o)&&E[o.id][d.iso].s!=='V'&&ehFolga(E[o.id][d.iso]));
+          for(const pessoa of candidatas){
+            let melhor=null,bs=Infinity;
+            for(const d2 of sem.dias){
+              if(d2.iso===d.iso||d2.dow===0||d2.fer) continue;
+              if(E[pessoa.id][d2.iso].s!=='T') continue;
+              if(quebraCobertura(loja,E,cs,d2,pessoa)) continue;
+              const sc=pontuar(E,dias,loja,cs,pessoa,d2);
+              if(sc<bs){bs=sc;melhor=d2;}
+            }
+            // se não achar outro dia na mesma semana, deixa como está — fica sinalizado pela
+            // checagem de cobertura genérica (caso raro, cobertura mínima bem apertada).
+            if(melhor){ E[pessoa.id][d.iso].s='T'; E[pessoa.id][melhor.iso].s='F'; break; }
           }
-          // se não achar outro dia na mesma semana, deixa como está — fica sinalizado pela
-          // checagem de cobertura genérica (caso raríssimo, cobertura mínima bem apertada).
-          if(melhor){ E[vrDaLoja.id][d.iso].s='T'; E[vrDaLoja.id][melhor.iso].s='F'; }
         }
       }
     }
