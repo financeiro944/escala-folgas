@@ -417,9 +417,18 @@ function gerar(){
   for(const loja of state.lojas){
     const cs=state.colabs.filter(c=>c.loja===loja.id);
     const ord=[...cs].sort((a,b)=>a.turno-b.turno||a.id.localeCompare(b.id));
+    // VR (24/11): a pessoa marcada como responsável pela loja quando a gerente não está.
+    // Nunca pode folgar no mesmo dia que a gerente — tratado em dois pontos abaixo: a fase
+    // de domingo (logo adiante) e uma troca de dia depois da folga semanal (mais abaixo).
+    const gerenteDaLoja=cs.find(c=>papelDe(c.funcao)==='gerente');
+    const vrDaLoja=cs.find(c=>c.vr);
+    const temParGerenteVr=!!(gerenteDaLoja&&vrDaLoja&&gerenteDaLoja.id!==vrDaLoja.id);
     // Domingo (23/11): regra unificada para todo mundo — trabalha um domingo sim,
     // outro não (sem diferença por sexo, que era a regra antiga).
     const fase={}; ord.forEach((c,i)=>fase[c.id]=i%2);
+    // Garante que VR e gerente nunca caiam no mesmo domingo de folga — em vez de corrigir
+    // depois, já nasce na fase oposta (nunca coincide, por construção).
+    if(temParGerenteVr&&fase[gerenteDaLoja.id]===fase[vrDaLoja.id]) fase[vrDaLoja.id]=1-fase[vrDaLoja.id];
     // para cada domingo do mês, em que índice (0,1,2...) cada colaborador folgaria
     // naturalmente pela fase (sem nenhuma reversão por cobertura)
     const domsSun=dias.filter(d=>d.dow===0);
@@ -520,6 +529,29 @@ function gerar(){
           // furar a cobertura mínima só para aliviar uma sequência (por isso só na cheia).
           if(best&&(completa||!quebraCobertura(loja,E,cs,best,c))) E[c.id][best.iso].s='F';
           else break;
+        }
+      }
+    }
+    // VR e gerente (24/11): domingo já nasce sem coincidir (fase oposta, acima) — aqui cobre
+    // os outros dias da semana. Se as duas acabarem de folga no mesmo dia (seg-sáb), troca o
+    // dia da VR por outro que ela já trabalha na mesma semana, em vez de só cancelar a folga
+    // dela sem repor (isso já aconteceu e deixou a VR sem nenhuma folga no mês inteiro).
+    if(temParGerenteVr){
+      for(const sem of semanas(dias)){
+        for(const d of sem.dias){
+          const cGer=E[gerenteDaLoja.id][d.iso], cVr=E[vrDaLoja.id][d.iso];
+          if(d.dow===0||cVr.s==='V'||!ehFolga(cGer)||!ehFolga(cVr)) continue;
+          let melhor=null,bs=Infinity;
+          for(const d2 of sem.dias){
+            if(d2.iso===d.iso||d2.dow===0||d2.fer) continue;
+            if(E[vrDaLoja.id][d2.iso].s!=='T') continue;
+            if(ehFolga(E[gerenteDaLoja.id][d2.iso])) continue;
+            const sc=pontuar(E,dias,loja,cs,vrDaLoja,d2);
+            if(sc<bs){bs=sc;melhor=d2;}
+          }
+          // se não achar outro dia na mesma semana, deixa como está — fica sinalizado pela
+          // checagem de cobertura genérica (caso raríssimo, cobertura mínima bem apertada).
+          if(melhor){ E[vrDaLoja.id][d.iso].s='T'; E[vrDaLoja.id][melhor.iso].s='F'; }
         }
       }
     }
