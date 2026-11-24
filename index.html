@@ -426,9 +426,28 @@ function gerar(){
     // Domingo (23/11): regra unificada para todo mundo — trabalha um domingo sim,
     // outro não (sem diferença por sexo, que era a regra antiga).
     const fase={}; ord.forEach((c,i)=>fase[c.id]=i%2);
-    // Garante que VR e gerente nunca caiam no mesmo domingo de folga — em vez de corrigir
-    // depois, já nasce na fase oposta (nunca coincide, por construção).
-    if(temParGerenteVr&&fase[gerenteDaLoja.id]===fase[vrDaLoja.id]) fase[vrDaLoja.id]=1-fase[vrDaLoja.id];
+    // Escalona a fase entre quem cobre o mesmo papel (24/11): sem isso, duas pessoas que se
+    // cobrem (os 2 caixas do turno, os 2 vendedores, gerente+VR) podem calhar de cair na
+    // mesma fase e sempre folgar juntas no domingo (e, por tabela, sempre precisar da mesma
+    // folga no dia seguinte) — um buraco de cobertura que se repete toda quinzena, não só
+    // ocasional. Processado como pares com prioridade: gerente/VR primeiro (regra mais
+    // importante), depois os pares de mesmo papel+turno — usando um "travado" pra nunca
+    // desfazer um par de prioridade mais alta já resolvido (ex.: se a VR também for uma das
+    // 2 caixas, a correção da dupla de caixa mexe na OUTRA caixa, nunca desfaz a da VR).
+    const paresDevemDiferir=[];
+    if(temParGerenteVr) paresDevemDiferir.push([gerenteDaLoja.id,vrDaLoja.id]);
+    const gruposPapel={};
+    ord.forEach(c=>{ const chave=c.turno+'|'+papelDe(c.funcao); (gruposPapel[chave]=gruposPapel[chave]||[]).push(c); });
+    Object.values(gruposPapel).forEach(grupo=>{ for(let i=1;i<grupo.length;i++) paresDevemDiferir.push([grupo[0].id,grupo[i].id]); });
+    const travados=new Set();
+    paresDevemDiferir.forEach(([a,b])=>{
+      if(fase[a]!==fase[b]){ travados.add(a); travados.add(b); return; }
+      if(!travados.has(b)) fase[b]=1-fase[b];
+      else if(!travados.has(a)) fase[a]=1-fase[a];
+      // se os dois já estiverem travados por um par de prioridade mais alta e ainda assim
+      // coincidirem, deixa como está — vira um alerta ocasional de cobertura, caso raro.
+      travados.add(a); travados.add(b);
+    });
     // para cada domingo do mês, em que índice (0,1,2...) cada colaborador folgaria
     // naturalmente pela fase (sem nenhuma reversão por cobertura)
     const domsSun=dias.filter(d=>d.dow===0);
@@ -483,6 +502,11 @@ function gerar(){
         E[c.id][d.iso].s=eq[c.id]?'T':'F';
       });
     });
+    // Dias de folga que NENHUMA correção posterior (troca de dia por cobertura) pode mexer,
+    // porque foram colocados ali por uma regra dura específica (não são "flexíveis" como as
+    // folgas normais da semana). Guardado como "colabId|iso". 24/11: criado depois de um bug
+    // em que a correção de cobertura mexeu bem na folga do dia seguinte obrigatório.
+    const protegidas=new Set();
     // Dia seguinte de folga obrigatória (23/11, regra dura): quem trabalhou num domingo OU
     // num feriado de equipe reduzida (não fechado) folga sem falta no dia seguinte, seja
     // qual for o dia da semana — substitui a regra antiga que só valia pra domingo→segunda.
@@ -492,7 +516,7 @@ function gerar(){
       if(!gatilho) return;
       const prox=dias[i+1];
       if(!prox||prox.fer) return; // sem dado do mês seguinte aqui, ou respeita a equipe escolhida pro feriado seguinte
-      cs.forEach(c=>{ if(E[c.id][prox.iso].s==='T'&&trabalha(E[c.id][d.iso])) E[c.id][prox.iso].s='F'; });
+      cs.forEach(c=>{ if(E[c.id][prox.iso].s==='T'&&trabalha(E[c.id][d.iso])){ E[c.id][prox.iso].s='F'; protegidas.add(c.id+'|'+prox.iso); } });
     });
     // Histórico (23/11): se o ÚLTIMO dia do mês anterior foi um gatilho (domingo ou feriado
     // de equipe reduzida) e a pessoa trabalhou nele, o dia 1 deste mês precisa ser folga —
@@ -503,7 +527,7 @@ function gerar(){
         const anteriorIso=diaAnterior(dia0.iso);
         const infoAnt=infoFeriado(anteriorIso);
         const gatilhoAnterior=parseISO(anteriorIso).getUTCDay()===0||(infoAnt&&!infoAnt.fechado);
-        if(gatilhoAnterior) cs.forEach(c=>{ if(E[c.id][dia0.iso].s==='T'&&trabalhouHistorico(c.id,anteriorIso)) E[c.id][dia0.iso].s='F'; });
+        if(gatilhoAnterior) cs.forEach(c=>{ if(E[c.id][dia0.iso].s==='T'&&trabalhouHistorico(c.id,anteriorIso)){ E[c.id][dia0.iso].s='F'; protegidas.add(c.id+'|'+dia0.iso); } });
       }
     }
     for(const sem of semanas(dias)){
@@ -544,7 +568,7 @@ function gerar(){
         if(d.dow===0||d.fer) continue;
         for(const regra of regrasDoDia(loja,d)){
           if(contarRegra(E,cs,d,regra)>=regra.min) continue;
-          const candidatas=cs.filter(o=>janelaIncluiTurno(regra.janela,turnoDoDia(o,d))&&papelBateOuVR(regra,o)&&E[o.id][d.iso].s!=='V'&&ehFolga(E[o.id][d.iso]));
+          const candidatas=cs.filter(o=>janelaIncluiTurno(regra.janela,turnoDoDia(o,d))&&papelBateOuVR(regra,o)&&E[o.id][d.iso].s!=='V'&&ehFolga(E[o.id][d.iso])&&!protegidas.has(o.id+'|'+d.iso));
           for(const pessoa of candidatas){
             let melhor=null,bs=Infinity;
             for(const d2 of sem.dias){
