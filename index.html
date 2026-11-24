@@ -296,12 +296,36 @@ const ui={tab:'escala',loja:null,pop:null};
 /* datas */
 function parseISO(s){const [y,m,d]=s.split('-').map(Number);return new Date(Date.UTC(y,m-1,d));}
 function epochDay(iso){return Math.round(parseISO(iso).getTime()/86400000);}
+function diaMenos(iso,n){ const d=parseISO(iso); d.setUTCDate(d.getUTCDate()-n); return d.getUTCFullYear()+'-'+pad(d.getUTCMonth()+1)+'-'+pad(d.getUTCDate()); }
+function diaAnterior(iso){ return diaMenos(iso,1); }
+// Dia do Comerciário do Rio de Janeiro (23/11): sempre a 3ª segunda-feira de outubro, calculado
+// (não precisa cadastrar de novo todo ano). A loja NÃO funciona nesse dia (nem equipe reduzida).
+function diaDoComerciario(ano){
+  const dow=new Date(Date.UTC(ano,9,1)).getUTCDay();
+  const primeiraSegunda=1+((1-dow+7)%7);
+  return `${ano}-10-${pad(primeiraSegunda+14)}`;
+}
+// Info de feriado de uma data: {fechado, computado} ou null se não for feriado.
+// fechado=true → a loja não abre (Natal e Dia do Comerciário); fechado=false → equipe
+// reduzida escolhida à parte, igual domingo (demais feriados cadastrados).
+function infoFeriado(iso){
+  const ano=+iso.slice(0,4);
+  if(iso===diaDoComerciario(ano)) return {fechado:true,computado:true};
+  const f=(state.feriados||[]).find(x=>x.data===iso);
+  return f?{fechado:!!f.fechado,computado:false}:null;
+}
 function diasDoMes(mes){
   const [y,m]=mes.split('-').map(Number); const n=new Date(Date.UTC(y,m,0)).getUTCDate(); const out=[];
   for(let d=1;d<=n;d++){ const iso=`${y}-${pad(m)}-${pad(d)}`; const dow=parseISO(iso).getUTCDay();
-    out.push({iso,d,dow,fer:state.feriados.includes(iso),wk:epochDay(iso)-((dow+6)%7)}); }
+    const info=infoFeriado(iso);
+    out.push({iso,d,dow,fer:!!info,ferFechado:info?info.fechado:false,wk:epochDay(iso)-((dow+6)%7)}); }
   return out;
 }
+// Estado de um colaborador numa data de OUTRO mês já gerado (histórico) — usado para não
+// escalar alguém que trabalhou no domingo/feriado anterior, ou estourar o limite de 7 dias
+// seguidos, bem na virada do mês (23/11). Procura em state.escalas, não precisa gerar de novo.
+function celulaHistorica(colabId,iso){ const E=state.escalas[iso.slice(0,7)]; return (E&&E[colabId])?E[colabId][iso]:null; }
+function trabalhouHistorico(colabId,iso){ const cel=celulaHistorica(colabId,iso); return cel?trabalha(cel):false; }
 const especial=d=>d.dow===0||d.fer;
 const fmtD=iso=>{const p=iso.split('-');return p[2]+'/'+p[1];};
 function emFerias(c,iso){return (c.ferias||[]).some(([a,b])=>iso>=a&&iso<=b);}
@@ -331,7 +355,9 @@ function aplicarPisoVendedor(regras){
   if(!out.some(r=>r.papel==='vendedor'&&r.janela==='geral')) out.push({janela:'geral',papel:'vendedor',min:2});
   return out;
 }
-function regrasDoDia(loja,d){ return aplicarPisoVendedor(especial(d)?(loja.cob.domingo||[]):(d.dow===6?(loja.cob.sabado||[]):(loja.cob.semana||[]))); }
+// Em feriado fechado (Natal, Dia do Comerciário — 23/11) a loja não abre: nenhuma regra de
+// cobertura se aplica (não faz sentido cobrar mínimo de um dia que ninguém trabalha).
+function regrasDoDia(loja,d){ if(d.ferFechado) return []; return aplicarPisoVendedor(especial(d)?(loja.cob.domingo||[]):(d.dow===6?(loja.cob.sabado||[]):(loja.cob.semana||[]))); }
 function janelaIncluiTurno(janela,turno){ return janela==='geral'||(janela==='turno1'&&turno===1)||(janela==='turno2'&&turno===2); }
 function papelBate(papelRegra,papel){ return papelRegra==='_total'||papelRegra===papel; }
 // Em feriado (23/11), quem trabalha e em qual turno vem da equipe escolhida pelo Stênio
@@ -421,25 +447,51 @@ function gerar(){
       // domingo seguida trabalhada — só usa gente em risco se a falta for maior.
       while(trab<domMin-1&&arriscados.length){ E[arriscados.shift().id][d.iso].s='T'; trab++; }
     });
+    // Histórico (23/11): o primeiro domingo do mês pode cair logo depois do último domingo
+    // do mês anterior já gerado — confere os últimos ~60 dias pra não deixar a mesma pessoa
+    // trabalhando em domingos seguidos só porque a fase reiniciou "sem memória" no mês novo.
+    if(domsSun.length){
+      const primeiroDom=domsSun[0], domAnteriorIso=diaMenos(primeiroDom.iso,7);
+      cs.forEach(c=>{
+        if(E[c.id][primeiroDom.iso].s==='T'&&trabalhouHistorico(c.id,domAnteriorIso)) E[c.id][primeiroDom.iso].s='F';
+      });
+    }
     // Equipe do feriado (23/11): quem trabalha e em qual turno, nos feriados, vem da escolha
     // do Stênio (state.feriadoEquipe), não do turno normal nem do revezamento de domingo —
     // isso sobrepõe o que a fase de domingo decidiu acima quando o feriado cai num domingo.
     // Quem não está na equipe do feriado folga (conta como folga da semana); férias não mudam.
+    // Feriado FECHADO (Natal, Dia do Comerciário): a loja não abre, ninguém trabalha, não
+    // existe "equipe" pra escolher.
     dias.filter(d=>d.fer).forEach(d=>{
-      const eq=(state.feriadoEquipe&&state.feriadoEquipe[d.iso])||{};
-      cs.forEach(c=>{ if(E[c.id][d.iso].s!=='V') E[c.id][d.iso].s=eq[c.id]?'T':'F'; });
+      cs.forEach(c=>{ if(E[c.id][d.iso].s==='V') return;
+        if(d.ferFechado){ E[c.id][d.iso].s='F'; return; }
+        const eq=(state.feriadoEquipe&&state.feriadoEquipe[d.iso])||{};
+        E[c.id][d.iso].s=eq[c.id]?'T':'F';
+      });
     });
-    // Segunda obrigatória após domingo trabalhado (decisão de 23/11, regra dura): quem
-    // trabalhou no domingo (ou domingo-feriado) folga sem falta na segunda-feira seguinte.
-    // Isso conta como uma das 2 folgas semanais daquela semana (ver loop de folga semanal abaixo).
+    // Dia seguinte de folga obrigatória (23/11, regra dura): quem trabalhou num domingo OU
+    // num feriado de equipe reduzida (não fechado) folga sem falta no dia seguinte, seja
+    // qual for o dia da semana — substitui a regra antiga que só valia pra domingo→segunda.
+    // Isso conta como uma das 2 folgas semanais daquela semana.
     dias.forEach((d,i)=>{
-      // Se a própria segunda é feriado, quem trabalha nela já foi decidido pela equipe do
-      // feriado (acima) — não sobrepor essa escolha manual automaticamente; validar() sinaliza
-      // o conflito (domingo trabalhado sem folga na segunda) para o Stênio decidir.
-      if(d.dow!==1||i===0||dias[i-1].dow!==0||d.fer) return;
-      const domIso=dias[i-1].iso;
-      cs.forEach(c=>{ if(E[c.id][d.iso].s==='T'&&trabalha(E[c.id][domIso])) E[c.id][d.iso].s='F'; });
+      const gatilho=d.dow===0||(d.fer&&!d.ferFechado);
+      if(!gatilho) return;
+      const prox=dias[i+1];
+      if(!prox||prox.fer) return; // sem dado do mês seguinte aqui, ou respeita a equipe escolhida pro feriado seguinte
+      cs.forEach(c=>{ if(E[c.id][prox.iso].s==='T'&&trabalha(E[c.id][d.iso])) E[c.id][prox.iso].s='F'; });
     });
+    // Histórico (23/11): se o ÚLTIMO dia do mês anterior foi um gatilho (domingo ou feriado
+    // de equipe reduzida) e a pessoa trabalhou nele, o dia 1 deste mês precisa ser folga —
+    // mesma regra acima, só que olhando pra trás da virada do mês.
+    {
+      const dia0=dias[0];
+      if(!dia0.fer){
+        const anteriorIso=diaAnterior(dia0.iso);
+        const infoAnt=infoFeriado(anteriorIso);
+        const gatilhoAnterior=parseISO(anteriorIso).getUTCDay()===0||(infoAnt&&!infoAnt.fechado);
+        if(gatilhoAnterior) cs.forEach(c=>{ if(E[c.id][dia0.iso].s==='T'&&trabalhouHistorico(c.id,anteriorIso)) E[c.id][dia0.iso].s='F'; });
+      }
+    }
     for(const sem of semanas(dias)){
       // Regime 5x2 (23/11): semana cheia (7 dias) precisa de 2 folgas; semana "completa"
       // (>=4 dias, pode ser borda do mês) precisa de pelo menos 1. Domingo (fase) e a
@@ -467,12 +519,23 @@ function gerar(){
       }
     }
     // Limite duro de 7 dias seguidos trabalhando, sem exceção (decisão de 23/11): se mesmo
-    // com as 2 folgas semanais e a segunda obrigatória ainda sobrar uma sequência de 8+ dias
-    // (ex.: borda de mês, ou domingo trabalhado longe das folgas da semana), força uma folga
-    // extra no 8º dia para nunca estourar o limite. Isso tem prioridade sobre a cobertura
-    // mínima (que é configurável, não é lei) — mesmo princípio já usado no domingo/segunda.
+    // com as 2 folgas semanais e o dia seguinte obrigatório ainda sobrar uma sequência de 8+
+    // dias (ex.: borda de mês, ou domingo trabalhado longe das folgas da semana), força uma
+    // folga extra no 8º dia para nunca estourar o limite. Isso tem prioridade sobre a
+    // cobertura mínima (que é configurável, não é lei) — mesmo princípio do domingo/feriado.
+    // Histórico (23/11): a sequência já começa contando os dias trabalhados no fim do mês
+    // anterior (até 60 dias pra trás), pra não deixar passar um estouro bem na virada do mês.
+    function streakHistorico(colabId){
+      let streak=0, iso=diaAnterior(dias[0].iso);
+      for(let passos=0;passos<60;passos++){
+        const cel=celulaHistorica(colabId,iso);
+        if(!cel||cel.s==='V'||!trabalha(cel)) break;
+        streak++; iso=diaAnterior(iso);
+      }
+      return streak;
+    }
     for(const c of ord){
-      const row=E[c.id]; let streak=0;
+      const row=E[c.id]; let streak=streakHistorico(c.id);
       for(const d of dias){
         if(row[d.iso].s==='V'){ streak=0; continue; }
         if(trabalha(row[d.iso])){ streak++; if(streak>7){ row[d.iso].s='F'; streak=0; } }
@@ -534,19 +597,42 @@ function validar(){
         const w=j=>trabalha(row[doms[j].iso]);
         if(w(i)&&w(i-1)){ info.err++; r.cel[c.id+'|'+doms[i].iso]='err'; L.push({n:'e',k:'reg',t:`${c.nome}: trabalha nos domingos ${fmtD(doms[i-1].iso)} e ${fmtD(doms[i].iso)} seguidos.`}); }
       }
-      // Segunda obrigatória após domingo trabalhado (23/11): pega também ajustes manuais
-      // que quebrem a regra, não só o que o gerador produz.
+      // Histórico (23/11): o primeiro domingo do mês contra o último domingo do mês anterior.
+      if(doms.length){
+        const domAnt=diaMenos(doms[0].iso,7);
+        if(trabalha(row[doms[0].iso])&&trabalhouHistorico(c.id,domAnt)){
+          info.err++; r.cel[c.id+'|'+doms[0].iso]='err';
+          L.push({n:'e',k:'reg',t:`${c.nome}: trabalha nos domingos ${fmtD(domAnt)} e ${fmtD(doms[0].iso)} seguidos (um deles no mês anterior).`});
+        }
+      }
+      // Dia seguinte de folga obrigatória (23/11): quem trabalhou num domingo ou feriado de
+      // equipe reduzida precisa folgar no dia seguinte, não importa o dia da semana. Pega
+      // também ajustes manuais que quebrem a regra, não só o que o gerador produz.
       dias.forEach((d,i)=>{
-        if(d.dow!==1||i===0||dias[i-1].dow!==0) return;
-        const domIso=dias[i-1].iso;
-        if(row[domIso].s!=='V'&&trabalha(row[domIso])&&trabalha(row[d.iso])){
-          info.err++; r.cel[c.id+'|'+d.iso]='err';
-          L.push({n:'e',k:'reg',t:`${c.nome}: trabalhou no domingo ${fmtD(domIso)} mas não folgou na segunda ${fmtD(d.iso)} seguinte.`});
+        const gatilho=d.dow===0||(d.fer&&!d.ferFechado);
+        if(!gatilho) return;
+        const prox=dias[i+1]; if(!prox) return;
+        if(row[d.iso].s!=='V'&&trabalha(row[d.iso])&&trabalha(row[prox.iso])){
+          info.err++; r.cel[c.id+'|'+prox.iso]='err';
+          L.push({n:'e',k:'reg',t:`${c.nome}: trabalhou em ${fmtD(d.iso)} mas não folgou no dia seguinte (${fmtD(prox.iso)}).`});
         }
       });
-      // Limite duro de 7 dias seguidos trabalhando (23/11, sem exceção) — o gerador já
-      // evita isso sozinho; esta checagem pega ajustes manuais que estourem o limite.
-      let run=0;
+      // Histórico (23/11): se o último dia do mês anterior foi um gatilho (domingo ou feriado
+      // de equipe reduzida) trabalhado, o dia 1 deste mês precisa ser folga.
+      {
+        const dia0=dias[0], anteriorIso=diaAnterior(dia0.iso);
+        const infoAnt=infoFeriado(anteriorIso);
+        const gatilhoAnterior=parseISO(anteriorIso).getUTCDay()===0||(infoAnt&&!infoAnt.fechado);
+        if(gatilhoAnterior&&trabalhouHistorico(c.id,anteriorIso)&&trabalha(row[dia0.iso])){
+          info.err++; r.cel[c.id+'|'+dia0.iso]='err';
+          L.push({n:'e',k:'reg',t:`${c.nome}: trabalhou em ${fmtD(anteriorIso)} (mês anterior) mas não folgou em ${fmtD(dia0.iso)}.`});
+        }
+      }
+      // Limite duro de 7 dias seguidos trabalhando (23/11, sem exceção) — o gerador já evita
+      // isso sozinho; esta checagem pega ajustes manuais que estourem o limite. Histórico:
+      // a contagem já começa com os dias trabalhados no fim do mês anterior.
+      let run=0, iso=diaAnterior(dias[0].iso);
+      for(let passos=0;passos<60;passos++){ const cel=celulaHistorica(c.id,iso); if(!cel||cel.s==='V'||!trabalha(cel)) break; run++; iso=diaAnterior(iso); }
       dias.forEach((d,i)=>{ if(trabalha(row[d.iso])) run++; else run=0;
         if(run>7){ r.cel[c.id+'|'+d.iso]='err';
           const next=dias[i+1]; if(!next||!trabalha(row[next.iso])){ info.err++; L.push({n:'e',k:'seq',t:`${c.nome}: ${run} dias seguidos de trabalho até ${fmtD(d.iso)} (acima do limite de 7).`}); } } });
@@ -683,9 +769,11 @@ function viewFeriadoEquipes(){
   if(!state.feriados.length) return '';
   let h=`<section class="sec" style="max-width:none"><h2>Equipe de cada feriado</h2>
   <p class="muted" style="max-width:72ch">Em feriado só quem está marcado como Turno 1 ou Turno 2 aqui embaixo trabalha (normalmente metade de cada turno) — nos horários de feriado das regras acima. Quem fica em "Não trabalha" folga nesse dia, e essa folga já conta como uma das folgas da semana da pessoa.</p>`;
-  for(const iso of state.feriados.slice().sort()){
-    const eq=state.feriadoEquipe[iso]||{};
+  for(const f of state.feriados.slice().sort((a,b)=>a.data.localeCompare(b.data))){
+    const iso=f.data;
     h+=`<h3 style="margin:18px 0 8px">${esc(iso.split('-').reverse().join('/'))}</h3>`;
+    if(f.fechado){ h+='<p class="muted">Loja fechada — ninguém trabalha nesse dia.</p>'; continue; }
+    const eq=state.feriadoEquipe[iso]||{};
     for(const loja of state.lojas){
       const cs=state.colabs.filter(c=>c.loja===loja.id).sort((a,b)=>a.turno-b.turno||a.nome.localeCompare(b.nome));
       h+=`<div class="tbl-wrap" style="margin-bottom:14px"><table class="list"><thead><tr><th>${esc(loja.nome)}</th><th>Turno normal</th><th>Escalação no feriado</th></tr></thead><tbody>`;
@@ -708,9 +796,9 @@ function viewRegras(){
   <li>Jornada de 42 horas semanais em 5x2: cinco dias de 8h24 com 1 hora de almoço e duas folgas por semana (segunda a domingo).</li>
   <li>Turno 1 e turno 2 variam pelo tipo de dia: seg-sex das ${hm(TURNOS.semana[1].ini)}–${hm(TURNOS.semana[1].fim)} (turno 1) e ${hm(TURNOS.semana[2].ini)}–${hm(TURNOS.semana[2].fim)} (turno 2); sábado das ${hm(TURNOS.sabado[1].ini)}–${hm(TURNOS.sabado[1].fim)} e ${hm(TURNOS.sabado[2].ini)}–${hm(TURNOS.sabado[2].fim)}; domingo e feriado das ${hm(TURNOS.domingo[1].ini)}–${hm(TURNOS.domingo[1].fim)} e ${hm(TURNOS.domingo[2].ini)}–${hm(TURNOS.domingo[2].fim)}.</li>
   <li>Domingo: todo mundo folga um domingo sim, outro não (regra única, sem diferença por sexo).</li>
-  <li>Quem trabalha no domingo folga obrigatoriamente na segunda-feira seguinte.</li>
-  <li>Nenhum colaborador pode trabalhar mais de 7 dias seguidos sem folga — limite rígido, sem exceção.</li>
-  <li>Feriado não segue o revezamento automático: a equipe que trabalha (metade de um turno, metade de outro, por exemplo) é escolhida feriado a feriado na aba "Regras e feriados". Quem não está na equipe do feriado folga nesse dia.</li>
+  <li>Quem trabalha num domingo ou num feriado de equipe reduzida folga obrigatoriamente no dia seguinte, seja qual for o dia da semana.</li>
+  <li>Nenhum colaborador pode trabalhar mais de 7 dias seguidos sem folga — limite rígido, sem exceção, contando inclusive os últimos dias do mês anterior.</li>
+  <li>Feriado não segue o revezamento automático: na maioria deles a equipe que trabalha (metade de um turno, metade de outro, por exemplo) é escolhida feriado a feriado na aba "Regras e feriados" — quem não está na equipe folga nesse dia. Só no Natal e no Dia do Comerciário do Rio de Janeiro (calculado automaticamente, 3ª segunda-feira de outubro) a loja fecha de vez e ninguém trabalha.</li>
   <li>Nunca pode haver só 1 vendedor(a) trabalhando na loja — mínimo de 2 sempre, em qualquer dia e horário.</li>
   <li>A cobertura mínima de cada loja e turno é respeitada sempre que possível. Quando não dá, o dia aparece em vermelho no rodapé da escala.</li>
   <li>Folgas de semana são distribuídas para evitar sexta e sábado, preferindo segunda a quarta.</li>
@@ -718,9 +806,11 @@ function viewRegras(){
   <li>O banco de horas do mês anterior é compensado no mês planejado: folgas inteiras de segunda a sexta e o restante em blocos de 1 hora (no máximo 2 horas por dia).</li>
   <li>O horário de almoço fica a combinar entre a equipe.</li></ul>
   <p class="muted">Regras trabalhistas e da convenção coletiva dos comerciários devem ser validadas pelo jurídico antes do uso.</p></section>
-  <section class="sec"><h2>Feriados</h2><p class="muted">Feriados usam o horário e a cobertura mínima de domingo, mas a equipe que trabalha é escolhida feriado a feriado (ver "Equipe de cada feriado" abaixo) — não é mais o revezamento automático de domingo.</p>
-  <div class="fer-list">${state.feriados.slice().sort().map(f=>`<span>${f.split('-').reverse().join('/')}<button data-act="delfer" data-f="${f}" aria-label="Remover feriado ${f}">×</button></span>`).join('')||'<span class="muted">Nenhum feriado cadastrado.</span>'}</div>
-  <div class="row"><label class="field">Novo feriado<input type="date" id="novofer" value="${y}-${pad(m)}-01"></label><button class="btn" data-act="addfer">Adicionar feriado</button></div></section>
+  <section class="sec"><h2>Feriados</h2><p class="muted">Na maioria dos feriados a loja funciona com equipe reduzida (igual domingo — ver "Equipe de cada feriado" abaixo), e quem trabalhar folga no dia seguinte. Só no Natal e no Dia do Comerciário a loja fecha de vez — ninguém trabalha, sem checagem de cobertura nesse dia.</p>
+  <div class="fer-list">${state.feriados.slice().sort((a,b)=>a.data.localeCompare(b.data)).map(f=>`<span>${f.data.split('-').reverse().join('/')}<button class="btn" data-act="ferFechado" data-f="${f.data}">${f.fechado?'Loja fechada':'Equipe reduzida'}</button><button data-act="delfer" data-f="${f.data}" aria-label="Remover feriado ${f.data}">×</button></span>`).join('')||'<span class="muted">Nenhum feriado cadastrado.</span>'}
+  <span class="muted">Dia do Comerciário ${y}: ${diaDoComerciario(y).split('-').reverse().join('/')} (loja fechada, calculado automaticamente)</span>
+  <span class="muted">Dia do Comerciário ${y+1}: ${diaDoComerciario(y+1).split('-').reverse().join('/')} (loja fechada, calculado automaticamente)</span></div>
+  <div class="row"><label class="field">Novo feriado<input type="date" id="novofer" value="${y}-${pad(m)}-01"></label><button class="btn" data-act="addfer">Adicionar feriado (equipe reduzida)</button></div></section>
   ${viewFeriadoEquipes()}
   <section class="sec"><h2>Integração com o Pontomais</h2><p>Nesta fase a integração será somente de leitura: colaboradores, lojas, funções, férias, afastamentos e saldo do banco de horas. Nada é alterado no Pontomais. O token ficará guardado num Google Apps Script intermediário, nunca nesta página.</p></section>
   <section class="sec"><h2>Conta e dados</h2><p class="muted">Os dados ficam salvos no servidor (Google), compartilhados entre quem acessar com a senha. Este botão apaga TUDO (lojas, colaboradores, escalas, feriados) desta conta — não dá pra desfazer.</p><button class="btn" data-act="reset">Apagar todos os dados desta conta</button></section>`;
@@ -759,8 +849,9 @@ document.addEventListener('click',e=>{
   if(a==='sexo'){ state.colabs.find(c=>c.id===el.dataset.c).sexo=el.dataset.s; markDirty(); return; }
   if(a==='cobAdd'){ const loja=state.lojas.find(l=>l.id===el.dataset.l); (loja.cob[el.dataset.g]=loja.cob[el.dataset.g]||[]).push({janela:'geral',papel:'_total',min:0}); markDirty(); return; }
   if(a==='cobDel'){ const loja=state.lojas.find(l=>l.id===el.dataset.l); loja.cob[el.dataset.g].splice(+el.dataset.i,1); markDirty(); return; }
-  if(a==='delfer'){ state.feriados=state.feriados.filter(f=>f!==el.dataset.f); delete state.feriadoEquipe[el.dataset.f]; markDirty(); return; }
-  if(a==='addfer'){ const v=$('#novofer').value; if(v&&!state.feriados.includes(v)) state.feriados.push(v); markDirty(); return; }
+  if(a==='delfer'){ state.feriados=state.feriados.filter(f=>f.data!==el.dataset.f); delete state.feriadoEquipe[el.dataset.f]; markDirty(); return; }
+  if(a==='addfer'){ const v=$('#novofer').value; if(v&&!state.feriados.some(f=>f.data===v)) state.feriados.push({data:v,fechado:false}); markDirty(); return; }
+  if(a==='ferFechado'){ const f=state.feriados.find(x=>x.data===el.dataset.f); if(f){ f.fechado=!f.fechado; markDirty(); } return; }
   if(a==='ferEquipe'){
     const f=el.dataset.f, c=el.dataset.c, t=+el.dataset.t;
     state.feriadoEquipe[f]=state.feriadoEquipe[f]||{};
@@ -803,6 +894,9 @@ async function entrar(email,senha){
     const remoto=await buscarEstadoRemoto(email,senha);
     state = remoto || defaultState();
     state.feriadoEquipe = state.feriadoEquipe || {};
+    // Migração (23/11): feriados eram só uma lista de datas (string); agora cada um também
+    // diz se a loja fecha nesse dia (Natal) ou funciona com equipe reduzida (os demais).
+    state.feriados = (state.feriados||[]).map(f=>typeof f==='string'?{data:f,fechado:f.slice(5)==='12-25'}:f);
     salvarLogin({email,senha});
     try{ localStorage.setItem(LS_KEY,JSON.stringify(state)); }catch(e){}
     ui.loja = state.lojas[0] ? state.lojas[0].id : null;
