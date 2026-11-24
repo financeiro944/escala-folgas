@@ -329,6 +329,9 @@ function diasDoMes(mes){
 function celulaHistorica(colabId,iso){ const E=state.escalas[iso.slice(0,7)]; return (E&&E[colabId])?E[colabId][iso]:null; }
 function trabalhouHistorico(colabId,iso){ const cel=celulaHistorica(colabId,iso); return cel?trabalha(cel):false; }
 const especial=d=>d.dow===0||d.fer;
+// Folga normal (semanal ou troca de dia) não pode cair em domingo (regra própria), feriado
+// (idem) nem sexta/sábado (24/11 — turno sempre completo nesses dois dias, pedido do Stênio).
+const proibidaFolga=d=>d.dow===0||d.dow===5||d.dow===6||d.fer;
 const fmtD=iso=>{const p=iso.split('-');return p[2]+'/'+p[1];};
 function emFerias(c,iso){return (c.ferias||[]).some(([a,b])=>iso>=a&&iso<=b);}
 const trabalha=x=>x.s==='T'||x.s==='P';
@@ -397,11 +400,17 @@ function pontuar(E,dias,loja,cs,c,d){
   let sc=0;
   if(quebraCobertura(loja,E,cs,d,c)) sc+=1000;
   sc+=cs.filter(o=>o.id!==c.id&&turnoDoDia(o,d)===turnoDoDia(c,d)&&(E[o.id][d.iso].s==='F'||E[o.id][d.iso].s==='C')).length*10;
-  // Folga deve cair de preferência entre segunda e quarta (pedido do Stênio): sexta e sábado
-  // são dias de pico (evita quase sempre), quinta também é evitada (quase tanto quanto
-  // sexta/sábado) — testado com varredura de parâmetros: esse equilíbrio foi o único que
-  // concentrou a maioria das folgas em seg-qua sem estourar sexta/sábado como válvula de escape.
-  if(d.dow===6) sc+=90; if(d.dow===5) sc+=90; if(d.dow===4) sc+=60; if(d.fer) sc+=10;
+  // Folga de segunda a quinta (24/11, substitui a preferência seg-qua de antes): sexta e
+  // sábado agora são proibidos pra folga normal (turno sempre completo nesses dois dias,
+  // pedido do Stênio) — excluído na origem (ver candidatos do loop de folga semanal), não
+  // só penalizado aqui. Quinta deixou de ser evitada: agora é um dia de folga normal, igual
+  // segunda-quarta, sem peso especial entre os 4 dias permitidos.
+  if(d.fer) sc+=10;
+  // Variar o dia da semana da folga da MESMA pessoa ao longo do mês (24/11, pedido do
+  // Stênio): sem isso, se um dia pontuar sempre melhor pra alguém (pela cobertura do turno
+  // dela, por exemplo), ela acabaria sempre folgando no mesmo dia da semana toda semana —
+  // penaliza repetir um dia da semana que essa pessoa já usou antes, no mesmo mês.
+  if(dias.some(d2=>d2.iso<d.iso&&d2.dow===d.dow&&ehFolga(E[c.id][d2.iso]))) sc+=30;
   const {b,a,achou}=sequencia(E[c.id],dias,dias.indexOf(d));
   // Regime 5x2 (23/11): limite duro é 7 dias seguidos sem folga (sem exceção — ver
   // forcarLimiteSequencia() no gerar()). Esse peso quadrático é só para o gerador PREFERIR
@@ -536,7 +545,7 @@ function gerar(){
       // segunda obrigatória (regra acima), quando caem nessa semana, já contam para a conta.
       const completa=sem.dias.length>=4;
       const necessario=sem.dias.length>=7?2:1;
-      const urg=c=>{ let m=Infinity; for(const d of sem.dias){ if(d.dow===0||d.fer||E[c.id][d.iso].s!=='T') continue; const {b,a}=sequencia(E[c.id],dias,dias.indexOf(d)); m=Math.min(m,Math.max(0,b-4)+Math.max(0,a-4)); } return m===Infinity?0:m; };
+      const urg=c=>{ let m=Infinity; for(const d of sem.dias){ if(proibidaFolga(d)||E[c.id][d.iso].s!=='T') continue; const {b,a}=sequencia(E[c.id],dias,dias.indexOf(d)); m=Math.min(m,Math.max(0,b-4)+Math.max(0,a-4)); } return m===Infinity?0:m; };
       const ordSem=[...ord].sort((x,y)=>urg(y)-urg(x));
       for(const c of ordSem){
         if(sem.dias.some(d=>E[c.id][d.iso].s==='V')) continue;
@@ -548,7 +557,7 @@ function gerar(){
         let faltam=alvo-jaTem;
         for(let n=0;n<faltam;n++){
           let best=null,bs=Infinity;
-          for(const d of sem.dias){ if(d.dow===0||d.fer||E[c.id][d.iso].s!=='T') continue; const sc=pontuar(E,dias,loja,cs,c,d); if(sc<bs){bs=sc;best=d;} }
+          for(const d of sem.dias){ if(proibidaFolga(d)||E[c.id][d.iso].s!=='T') continue; const sc=pontuar(E,dias,loja,cs,c,d); if(sc<bs){bs=sc;best=d;} }
           // na semana incompleta a folga é um extra, não obrigação legal: não vale a pena
           // furar a cobertura mínima só para aliviar uma sequência (por isso só na cheia).
           if(best&&(completa||!quebraCobertura(loja,E,cs,best,c))) E[c.id][best.iso].s='F';
@@ -572,7 +581,7 @@ function gerar(){
           for(const pessoa of candidatas){
             let melhor=null,bs=Infinity;
             for(const d2 of sem.dias){
-              if(d2.iso===d.iso||d2.dow===0||d2.fer) continue;
+              if(d2.iso===d.iso||proibidaFolga(d2)) continue;
               if(E[pessoa.id][d2.iso].s!=='T') continue;
               if(quebraCobertura(loja,E,cs,d2,pessoa)) continue;
               const sc=pontuar(E,dias,loja,cs,pessoa,d2);
@@ -609,7 +618,9 @@ function gerar(){
         else streak=0;
       }
     }
-    const uteis=dias.filter(d=>d.dow>=1&&d.dow<=5&&!d.fer);
+    // Banco de horas (24/11): segunda a QUINTA agora, não mais até sexta — turno completo
+    // sexta/sábado vale pra qualquer tipo de folga, não só a semanal.
+    const uteis=dias.filter(d=>d.dow>=1&&d.dow<=4&&!d.fer);
     for(const c of ord){
       if(!(c.saldo>0)) continue;
       const full=Math.floor(c.saldo/MIN_DIA); let blocos=Math.floor((c.saldo-full*MIN_DIA)/60);
@@ -658,6 +669,16 @@ function validar(){
         if(temFolgas<necessario){ info.err++; sem.dias.forEach(d=>{ if(trabalha(row[d.iso])) r.cel[c.id+'|'+d.iso]='warn'; });
           L.push({n:'e',k:'reg',t:`${c.nome}: semana de ${fmtD(sem.dias[0].iso)} com ${temFolgas} de ${necessario} folga(s) semanal(is).`}); }
       }
+      // Turno completo sexta/sábado (24/11, regra dura): ninguém pode folgar nesses 2 dias —
+      // pega ajustes manuais que quebrem isso (o gerador já não escala folga ali). Não vale em
+      // feriado (Natal cai fechado, e feriado com equipe ainda não escolhida também gera F pra
+      // todo mundo por padrão) — isso já é tratado pela regra própria de feriado, não é folga normal.
+      dias.forEach(d=>{
+        if((d.dow===5||d.dow===6)&&!d.fer&&ehFolga(row[d.iso])){
+          info.err++; r.cel[c.id+'|'+d.iso]='err';
+          L.push({n:'e',k:'reg',t:`${c.nome}: folga em ${fmtD(d.iso)} (${WDL[d.dow]}) — turno tem que estar completo sexta e sábado.`});
+        }
+      });
       // Domingo (23/11): regra única para todo mundo — não pode trabalhar em 2 domingos seguidos.
       const doms=dias.filter(d=>d.dow===0);
       for(let i=1;i<doms.length;i++){
@@ -837,7 +858,7 @@ function viewBanco(v){
   const cs=state.colabs.filter(c=>c.loja===loja.id).sort((a,b)=>a.turno-b.turno||a.nome.localeCompare(b.nome));
   const [y,m]=state.mes.split('-').map(Number); const ant=MESES[(m+10)%12];
   let h=`<section class="sec" style="max-width:none"><h2>${esc(loja.nome)}: compensação em ${MESES[m-1]} do saldo de ${ant}</h2>
-  <p class="muted" style="max-width:72ch">Cada 8h24 de saldo vira uma folga compensatória inteira. O que sobrar vira blocos de 1 hora, de segunda a sexta: o turno 1 sai mais cedo e o turno 2 entra mais tarde, sempre na faixa em que os dois turnos se cruzam (10:56 às 18:04). Sobras menores que 1 hora passam para o mês seguinte. Digite o saldo como 9:10 ou 9h10.</p>
+  <p class="muted" style="max-width:72ch">Cada 8h24 de saldo vira uma folga compensatória inteira. O que sobrar vira blocos de 1 hora, de segunda a quinta (sexta e sábado o turno tem que estar completo): o turno 1 sai mais cedo e o turno 2 entra mais tarde, sempre na faixa em que os dois turnos se cruzam (10:56 às 18:04). Sobras menores que 1 hora passam para o mês seguinte. Digite o saldo como 9:10 ou 9h10.</p>
   <div class="tbl-wrap"><table class="list"><thead><tr><th>Colaborador</th><th>Turno</th><th class="num">Saldo de ${ant}</th><th class="num">Folgas inteiras</th><th class="num">Horas parciais</th><th class="num">Total planejado</th><th class="num">Fica para o próximo mês</th></tr></thead><tbody>`;
   for(const c of cs){
     let nc=0,np=0; if(E&&E[c.id]) dias.forEach(d=>{const x=E[c.id][d.iso]; if(x.s==='C') nc++; if(x.s==='P') np+=x.p;});
@@ -885,9 +906,9 @@ function viewRegras(){
   <li>Feriado não segue o revezamento automático: na maioria deles a equipe que trabalha (metade de um turno, metade de outro, por exemplo) é escolhida feriado a feriado na aba "Regras e feriados" — quem não está na equipe folga nesse dia. Só no Natal e no Dia do Comerciário do Rio de Janeiro (calculado automaticamente, 3ª segunda-feira de outubro) a loja fecha de vez e ninguém trabalha.</li>
   <li>Nunca pode haver só 1 vendedor(a) trabalhando na loja — mínimo de 2 sempre, em qualquer dia e horário.</li>
   <li>A cobertura mínima de cada loja e turno é respeitada sempre que possível. Quando não dá, o dia aparece em vermelho no rodapé da escala.</li>
-  <li>Folgas de semana são distribuídas para evitar sexta e sábado, preferindo segunda a quarta.</li>
+  <li>Folga semanal só de segunda a quinta — sexta e sábado o turno tem que estar completo (ninguém folga), regra rígida sem exceção.</li>
   <li>Férias bloqueiam o colaborador; a semana com férias não recebe folga semanal.</li>
-  <li>O banco de horas do mês anterior é compensado no mês planejado: folgas inteiras de segunda a sexta e o restante em blocos de 1 hora (no máximo 2 horas por dia).</li>
+  <li>O banco de horas do mês anterior é compensado no mês planejado: folgas inteiras de segunda a quinta e o restante em blocos de 1 hora (no máximo 2 horas por dia) — mesma regra de turno completo sexta/sábado vale aqui também.</li>
   <li>O horário de almoço fica a combinar entre a equipe.</li></ul>
   <p class="muted">Regras trabalhistas e da convenção coletiva dos comerciários devem ser validadas pelo jurídico antes do uso.</p></section>
   <section class="sec"><h2>Feriados</h2><p class="muted">Na maioria dos feriados a loja funciona com equipe reduzida (igual domingo — ver "Equipe de cada feriado" abaixo), e quem trabalhar folga no dia seguinte. Só no Natal e no Dia do Comerciário a loja fecha de vez — ninguém trabalha, sem checagem de cobertura nesse dia.</p>
