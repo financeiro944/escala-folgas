@@ -547,20 +547,6 @@ function gerar(){
         else streak=0;
       }
     }
-    // VR (24/11): quem for marcada como responsável pela loja na ausência da gerente nunca
-    // pode folgar no mesmo dia que a gerente — sempre uma das duas precisa estar na loja.
-    // Regra dura: corrige por cima de qualquer folga já decidida (a gerente nunca é mexida
-    // aqui, só a VR, presumindo que a folga da gerente é a mais "fixa" das duas).
-    {
-      const gerenteDaLoja=cs.find(c=>papelDe(c.funcao)==='gerente');
-      const vrDaLoja=cs.find(c=>c.vr);
-      if(gerenteDaLoja&&vrDaLoja&&gerenteDaLoja.id!==vrDaLoja.id){
-        dias.forEach(d=>{
-          const cGer=E[gerenteDaLoja.id][d.iso], cVr=E[vrDaLoja.id][d.iso];
-          if(cVr.s!=='V'&&ehFolga(cGer)&&ehFolga(cVr)) cVr.s='T';
-        });
-      }
-    }
     const uteis=dias.filter(d=>d.dow>=1&&d.dow<=5&&!d.fer);
     for(const c of ord){
       if(!(c.saldo>0)) continue;
@@ -662,21 +648,10 @@ function validar(){
       if(info.plan>0&&info.resto<0) L.push({n:'w',k:'bh',t:`${c.nome}: compensação planejada passa do saldo em ${fmtH(-info.resto)}.`});
       else if(info.resto>=60) L.push({n:'i',k:'bh',t:`${c.nome}: ${fmtH(info.resto)} do banco de horas ficaram sem planejamento.`});
     }
-    // VR (24/11): nunca pode folgar no mesmo dia que a gerente — pega ajustes manuais que
-    // quebrem isso, não só o que o gerador produz (que já corrige sozinho).
-    {
-      const gerenteDaLoja=cs.find(c=>papelDe(c.funcao)==='gerente');
-      const vrDaLoja=cs.find(c=>c.vr);
-      if(gerenteDaLoja&&vrDaLoja&&gerenteDaLoja.id!==vrDaLoja.id){
-        dias.forEach(d=>{
-          const cGer=E[gerenteDaLoja.id][d.iso], cVr=E[vrDaLoja.id][d.iso];
-          if(ehFolga(cGer)&&ehFolga(cVr)){
-            r.cel[vrDaLoja.id+'|'+d.iso]='err'; r.colab[vrDaLoja.id].err++;
-            L.push({n:'e',k:'reg',t:`${vrDaLoja.nome} (VR) e ${gerenteDaLoja.nome} (gerente) folgam juntas em ${fmtD(d.iso)} — a loja fica sem ninguém responsável.`});
-          }
-        });
-      }
-    }
+    // VR e gerente (24/11): não têm mais uma checagem dedicada aqui — a regra de cobertura
+    // "gerente" (quando configurada como janela 'geral') já conta a VR via papelBateOuVR() e
+    // já aparece na checagem genérica de cobertura logo acima ("X de Y no mínimo"), do mesmo
+    // jeito que já funciona pros 2 estoquistas que se cobrem. Evita duplicar aviso.
   }
   return r;
 }
