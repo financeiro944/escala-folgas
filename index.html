@@ -423,9 +423,19 @@ function pontuar(E,dias,loja,cs,c,d){
 function gerar(){
   const dias=diasDoMes(state.mes); const E={};
   for(const c of state.colabs){ E[c.id]={}; for(const d of dias) E[c.id][d.iso]={s:emFerias(c,d.iso)?'V':'T',p:0}; }
+  // Sem fim de semana (25/11, Decolores): quem nunca trabalha sábado/domingo por contrato (ex.:
+  // estoquista com jornada fixa seg-sex) já nasce com esses 2 dias como folga fixa — conta como
+  // as 2 folgas da semana dele, sem entrar no revezamento de domingo nem no gerador de folga
+  // semanal (ver exclusões de ordDomingo/ordSem mais abaixo).
+  state.colabs.filter(c=>c.folgaFimDeSemana).forEach(c=>{
+    dias.forEach(d=>{ if((d.dow===0||d.dow===6)&&E[c.id][d.iso].s==='T') E[c.id][d.iso].s='F'; });
+  });
   for(const loja of state.lojas){
     const cs=state.colabs.filter(c=>c.loja===loja.id);
     const ord=[...cs].sort((a,b)=>a.turno-b.turno||a.id.localeCompare(b.id));
+    // Domingo raro e sem fim de semana ficam fora do revezamento padrão de domingo (tratados à
+    // parte, cada um do seu jeito — ver blocos próprios abaixo).
+    const ordDomingo=ord.filter(c=>!c.folgaFimDeSemana&&!c.domingoRaro);
     // VR (24/11): a pessoa marcada como responsável pela loja quando a gerente não está.
     // Nunca pode folgar no mesmo dia que a gerente — tratado em dois pontos abaixo: a fase
     // de domingo (logo adiante) e uma troca de dia depois da folga semanal (mais abaixo).
@@ -434,7 +444,7 @@ function gerar(){
     const temParGerenteVr=!!(gerenteDaLoja&&vrDaLoja&&gerenteDaLoja.id!==vrDaLoja.id);
     // Domingo (23/11): regra unificada para todo mundo — trabalha um domingo sim,
     // outro não (sem diferença por sexo, que era a regra antiga).
-    const fase={}; ord.forEach((c,i)=>fase[c.id]=i%2);
+    const fase={}; ordDomingo.forEach((c,i)=>fase[c.id]=i%2);
     // Escalona a fase entre quem cobre o mesmo papel (24/11): sem isso, duas pessoas que se
     // cobrem (os 2 caixas do turno, os 2 vendedores, gerente+VR) podem calhar de cair na
     // mesma fase e sempre folgar juntas no domingo (e, por tabela, sempre precisar da mesma
@@ -446,7 +456,7 @@ function gerar(){
     const paresDevemDiferir=[];
     if(temParGerenteVr) paresDevemDiferir.push([gerenteDaLoja.id,vrDaLoja.id]);
     const gruposPapel={};
-    ord.forEach(c=>{ const chave=c.turno+'|'+papelDe(c.funcao); (gruposPapel[chave]=gruposPapel[chave]||[]).push(c); });
+    ordDomingo.forEach(c=>{ const chave=c.turno+'|'+papelDe(c.funcao); (gruposPapel[chave]=gruposPapel[chave]||[]).push(c); });
     Object.values(gruposPapel).forEach(grupo=>{ for(let i=1;i<grupo.length;i++) paresDevemDiferir.push([grupo[0].id,grupo[i].id]); });
     const travados=new Set();
     paresDevemDiferir.forEach(([a,b])=>{
@@ -461,7 +471,7 @@ function gerar(){
     // naturalmente pela fase (sem nenhuma reversão por cobertura)
     const domsSun=dias.filter(d=>d.dow===0);
     const restIdx={};
-    cs.forEach(c=>{
+    ordDomingo.forEach(c=>{
       restIdx[c.id]=domsSun.map((d,i)=>({i,k:Math.floor(epochDay(d.iso)/7)})).filter(x=>(x.k%2)===fase[c.id]).map(x=>x.i);
     });
     // reverter a folga de domingo de índice i do colaborador c cria 2 domingos seguidos
@@ -477,9 +487,9 @@ function gerar(){
     }
     domsSun.forEach((d,i)=>{
       const k=Math.floor(epochDay(d.iso)/7);
-      ord.forEach(c=>{ if(k%2===fase[c.id]&&E[c.id][d.iso].s==='T') E[c.id][d.iso].s='F'; });
+      ordDomingo.forEach(c=>{ if(k%2===fase[c.id]&&E[c.id][d.iso].s==='T') E[c.id][d.iso].s='F'; });
       let trab=cs.filter(c=>trabalha(E[c.id][d.iso])).length;
-      const folgados=ord.filter(c=>E[c.id][d.iso].s==='F');
+      const folgados=ordDomingo.filter(c=>E[c.id][d.iso].s==='F');
       const seguros=folgados.filter(c=>!folgaArriscada(c,i));
       const arriscados=folgados.filter(c=>folgaArriscada(c,i));
       const domMin=minimoDomTotal(loja);
@@ -494,10 +504,23 @@ function gerar(){
     // trabalhando em domingos seguidos só porque a fase reiniciou "sem memória" no mês novo.
     if(domsSun.length){
       const primeiroDom=domsSun[0], domAnteriorIso=diaMenos(primeiroDom.iso,7);
-      cs.forEach(c=>{
+      ordDomingo.forEach(c=>{
         if(E[c.id][primeiroDom.iso].s==='T'&&trabalhouHistorico(c.id,domAnteriorIso)) E[c.id][primeiroDom.iso].s='F';
       });
     }
+    // Domingo raro (25/11, Decolores): pessoa marcada como domingoRaro trabalha quase todo
+    // domingo (não entra no revezamento quinzenal acima, por não ter ninguém do papel dela pra
+    // revezar) — só folga o mínimo exigido no mês: 1 domingo, ou 2 se o mês tiver 5 domingos.
+    // Pedido pontual do Stênio, só pra 1 pessoa por enquanto (se surgir de novo, generalizar).
+    cs.filter(c=>c.domingoRaro).forEach(c=>{
+      if(!domsSun.length) return;
+      const necessarios=domsSun.length>=5?2:1;
+      const passo=Math.max(1,Math.floor(domsSun.length/(necessarios+1)));
+      for(let n=1;n<=necessarios;n++){
+        const idx=Math.min(domsSun.length-1,n*passo);
+        E[c.id][domsSun[idx].iso].s='F';
+      }
+    });
     // Equipe do feriado (23/11): quem trabalha e em qual turno, nos feriados, vem da escolha
     // do Stênio (state.feriadoEquipe), não do turno normal nem do revezamento de domingo —
     // isso sobrepõe o que a fase de domingo decidiu acima quando o feriado cai num domingo.
@@ -549,6 +572,9 @@ function gerar(){
       const ordSem=[...ord].sort((x,y)=>urg(y)-urg(x));
       for(const c of ordSem){
         if(sem.dias.some(d=>E[c.id][d.iso].s==='V')) continue;
+        // Sem fim de semana (25/11): já folga sábado+domingo toda semana por contrato — não
+        // entra no gerador de folga semanal (senão ganharia uma 3ª folga indevida).
+        if(c.folgaFimDeSemana) continue;
         if(!completa&&urg(c)<=0) continue;
         const jaTem=sem.dias.filter(d=>ehFolga(E[c.id][d.iso])).length;
         // semana incompleta: a folga é um extra de alívio (1, igual já era antes), não a
@@ -661,7 +687,10 @@ function validar(){
     for(const c of cs){
       const row=E[c.id]; const info=r.colab[c.id]={err:0,warn:0};
       for(const sem of semanas(dias)){
-        if(sem.dias.length<4||sem.dias.some(d=>row[d.iso].s==='V')) continue;
+        // Sem fim de semana (25/11): folga sábado+domingo fixa por contrato já cobre a conta
+        // semanal, mesmo em semana de borda do mês sem sábado/domingo dentro do mês — não
+        // precisa (nem pode) ganhar folga extra durante a semana pra "completar" a conta.
+        if(sem.dias.length<4||sem.dias.some(d=>row[d.iso].s==='V')||c.folgaFimDeSemana) continue;
         // Regime 5x2 (23/11): semana cheia (7 dias) precisa de 2 folgas semanais; semana
         // na borda do mês (4-6 dias visíveis) precisa de pelo menos 1.
         const necessario=sem.dias.length>=7?2:1;
@@ -674,19 +703,21 @@ function validar(){
       // feriado (Natal cai fechado, e feriado com equipe ainda não escolhida também gera F pra
       // todo mundo por padrão) — isso já é tratado pela regra própria de feriado, não é folga normal.
       dias.forEach(d=>{
-        if((d.dow===5||d.dow===6)&&!d.fer&&ehFolga(row[d.iso])){
+        if((d.dow===5||(d.dow===6&&!c.folgaFimDeSemana))&&!d.fer&&ehFolga(row[d.iso])){
           info.err++; r.cel[c.id+'|'+d.iso]='err';
           L.push({n:'e',k:'reg',t:`${c.nome}: folga em ${fmtD(d.iso)} (${WDL[d.dow]}) — turno tem que estar completo sexta e sábado.`});
         }
       });
-      // Domingo (23/11): regra única para todo mundo — não pode trabalhar em 2 domingos seguidos.
+      // Domingo (23/11): regra única para todo mundo — não pode trabalhar em 2 domingos
+      // seguidos. Exceto domingoRaro (25/11): essa pessoa foi autorizada pelo Stênio a
+      // trabalhar vários domingos seguidos (só folga 1-2 por mês), então não se aplica a ela.
       const doms=dias.filter(d=>d.dow===0);
-      for(let i=1;i<doms.length;i++){
+      if(!c.domingoRaro) for(let i=1;i<doms.length;i++){
         const w=j=>trabalha(row[doms[j].iso]);
         if(w(i)&&w(i-1)){ info.err++; r.cel[c.id+'|'+doms[i].iso]='err'; L.push({n:'e',k:'reg',t:`${c.nome}: trabalha nos domingos ${fmtD(doms[i-1].iso)} e ${fmtD(doms[i].iso)} seguidos.`}); }
       }
       // Histórico (23/11): o primeiro domingo do mês contra o último domingo do mês anterior.
-      if(doms.length){
+      if(doms.length&&!c.domingoRaro){
         const domAnt=diaMenos(doms[0].iso,7);
         if(trabalha(row[doms[0].iso])&&trabalhouHistorico(c.id,domAnt)){
           info.err++; r.cel[c.id+'|'+doms[0].iso]='err';
