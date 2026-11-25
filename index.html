@@ -467,37 +467,44 @@ function gerar(){
       // coincidirem, deixa como está — vira um alerta ocasional de cobertura, caso raro.
       travados.add(a); travados.add(b);
     });
-    // para cada domingo do mês, em que índice (0,1,2...) cada colaborador folgaria
-    // naturalmente pela fase (sem nenhuma reversão por cobertura)
     const domsSun=dias.filter(d=>d.dow===0);
-    const restIdx={};
-    ordDomingo.forEach(c=>{
-      restIdx[c.id]=domsSun.map((d,i)=>({i,k:Math.floor(epochDay(d.iso)/7)})).filter(x=>(x.k%2)===fase[c.id]).map(x=>x.i);
-    });
-    // reverter a folga de domingo de índice i do colaborador c cria 2 domingos seguidos
-    // trabalhados? só enxerga o que está dentro do mês (sem dado do mês anterior)
+    // Reverter a folga de domingo de índice i do colaborador c cria 2 domingos seguidos
+    // trabalhados? (25/11, corrigido) O domingo ANTERIOR (i-1) já está decidido de verdade
+    // nesse momento (o forEach abaixo processa em ordem), então olha o E[] real, não um plano
+    // estático — antes disso usava só a fase original (sem contar reversões já aplicadas em
+    // domingos anteriores), e isso deixava passar reversões que juntas criavam 2 domingos
+    // seguidos mesmo cada uma parecendo segura isoladamente (bug achado testando a
+    // Decolores). O domingo SEGUINTE (i+1) ainda não foi decidido, então usa a fase como
+    // melhor estimativa disponível (só enxerga dentro do mês, sem dado do mês anterior).
     function folgaArriscada(c,i){
-      const idx=restIdx[c.id], pos=idx.indexOf(i);
-      const prevIdx=pos>0?idx[pos-1]:null, nextIdx=pos<idx.length-1?idx[pos+1]:null;
-      const maxOk=1;
-      if(prevIdx!=null&&nextIdx!=null) return (nextIdx-prevIdx-1)>maxOk;
-      if(prevIdx==null&&nextIdx!=null) return (nextIdx-i)>maxOk;
-      if(prevIdx!=null&&nextIdx==null) return (i-prevIdx)>maxOk;
+      const prev=domsSun[i-1], next=domsSun[i+1];
+      if(prev&&trabalha(E[c.id][prev.iso])) return true;
+      if(next){
+        const k2=Math.floor(epochDay(next.iso)/7);
+        if(k2%2!==fase[c.id]) return true;
+      }
       return false;
     }
+    // Contador de quantas vezes cada pessoa já foi chamada de volta pra cobrir domingo nesse
+    // mês (25/11): sem isso, a mesma pessoa (a primeira da ordem alfabética do id) acaba sendo
+    // sempre a escolhida toda vez que falta gente, perdendo o descanso de domingo quase todo
+    // mês mesmo com a fase alternando certo — descoberto testando a Decolores (equipe pequena,
+    // cobertura mínima próxima da média natural, reversão disparando quase toda semana).
+    const revertCount={}; cs.forEach(c=>revertCount[c.id]=0);
     domsSun.forEach((d,i)=>{
       const k=Math.floor(epochDay(d.iso)/7);
       ordDomingo.forEach(c=>{ if(k%2===fase[c.id]&&E[c.id][d.iso].s==='T') E[c.id][d.iso].s='F'; });
       let trab=cs.filter(c=>trabalha(E[c.id][d.iso])).length;
       const folgados=ordDomingo.filter(c=>E[c.id][d.iso].s==='F');
-      const seguros=folgados.filter(c=>!folgaArriscada(c,i));
-      const arriscados=folgados.filter(c=>folgaArriscada(c,i));
+      const porMenosChamado=(a,b)=>revertCount[a.id]-revertCount[b.id];
+      const seguros=folgados.filter(c=>!folgaArriscada(c,i)).sort(porMenosChamado);
+      const arriscados=folgados.filter(c=>folgaArriscada(c,i)).sort(porMenosChamado);
       const domMin=minimoDomTotal(loja);
-      while(trab<domMin&&seguros.length){ E[seguros.shift().id][d.iso].s='T'; trab++; }
+      while(trab<domMin&&seguros.length){ const c=seguros.shift(); E[c.id][d.iso].s='T'; revertCount[c.id]++; trab++; }
       // cobertura mínima é configurável (não é lei); a regra de domingo vem da CLT.
       // Uma falta de só 1 pessoa é preferível a forçar alguém numa 2ª folga de
       // domingo seguida trabalhada — só usa gente em risco se a falta for maior.
-      while(trab<domMin-1&&arriscados.length){ E[arriscados.shift().id][d.iso].s='T'; trab++; }
+      while(trab<domMin-1&&arriscados.length){ const c=arriscados.shift(); E[c.id][d.iso].s='T'; revertCount[c.id]++; trab++; }
     });
     // Histórico (23/11): o primeiro domingo do mês pode cair logo depois do último domingo
     // do mês anterior já gerado — confere os últimos ~60 dias pra não deixar a mesma pessoa
@@ -701,9 +708,12 @@ function validar(){
       // Turno completo sexta/sábado (24/11, regra dura): ninguém pode folgar nesses 2 dias —
       // pega ajustes manuais que quebrem isso (o gerador já não escala folga ali). Não vale em
       // feriado (Natal cai fechado, e feriado com equipe ainda não escolhida também gera F pra
-      // todo mundo por padrão) — isso já é tratado pela regra própria de feriado, não é folga normal.
+      // todo mundo por padrão) — isso já é tratado pela regra própria de feriado, não é folga
+      // normal. Também não vale pra quem está de férias/licença ('V') — achado testando a Nusa
+      // Dua (Vanicélia, licença maternidade): ela não devia contar como "folga indevida" só
+      // por estar afastada numa sexta/sábado, isso não é uma escolha de folga normal.
       dias.forEach(d=>{
-        if((d.dow===5||(d.dow===6&&!c.folgaFimDeSemana))&&!d.fer&&ehFolga(row[d.iso])){
+        if((d.dow===5||(d.dow===6&&!c.folgaFimDeSemana))&&!d.fer&&row[d.iso].s!=='V'&&ehFolga(row[d.iso])){
           info.err++; r.cel[c.id+'|'+d.iso]='err';
           L.push({n:'e',k:'reg',t:`${c.nome}: folga em ${fmtD(d.iso)} (${WDL[d.dow]}) — turno tem que estar completo sexta e sábado.`});
         }
