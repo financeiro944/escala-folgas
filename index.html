@@ -411,6 +411,19 @@ function pontuar(E,dias,loja,cs,c,d){
   // dela, por exemplo), ela acabaria sempre folgando no mesmo dia da semana toda semana —
   // penaliza repetir um dia da semana que essa pessoa já usou antes, no mesmo mês.
   if(dias.some(d2=>d2.iso<d.iso&&d2.dow===d.dow&&ehFolga(E[c.id][d2.iso]))) sc+=30;
+  // Variar também de um mês pro outro (25/11, pedido do Stênio): sem isso, cada mês é gerado
+  // do zero sem olhar pro anterior, e o mesmo padrão de dias acabava se repetendo quase
+  // idêntico mês após mês (ex.: sempre qua/qui/seg/ter). Primeira versão penalizava só "usou
+  // esse dia alguma vez no mês passado" — mas como a pessoa passa pelos 4 dias permitidos ao
+  // longo do mês de qualquer forma, isso virava um empate geral (todo dia tinha sido "usado"),
+  // sem diferenciar nada. Corrigido: penaliza proporcional a QUANTAS vezes esse dia da semana
+  // foi folga no mês anterior — o dia que ela mais repetiu pesa mais, um dia usado só 1 vez
+  // pesa pouco.
+  {
+    const mesAnt=diaMenos(dias[0].iso,1).slice(0,7);
+    const vezes=diasDoMes(mesAnt).filter(d2=>{ if(d2.dow!==d.dow) return false; const cel=celulaHistorica(c.id,d2.iso); return cel&&ehFolga(cel); }).length;
+    sc+=vezes*25;
+  }
   const {b,a,achou}=sequencia(E[c.id],dias,dias.indexOf(d));
   // Regime 5x2 (23/11): limite duro é 7 dias seguidos sem folga (sem exceção — ver
   // forcarLimiteSequencia() no gerar()). Esse peso quadrático é só para o gerador PREFERIR
