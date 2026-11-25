@@ -819,7 +819,8 @@ function viewEscala(v){
     <span class="item ${nReg?'bad':'good'}"><span class="big">${nReg}</span>regras de folga quebradas</span>
     <span class="item ${nSeq?'bad':'good'}"><span class="big">${nSeq}</span>sequências acima de 7 dias</span>
     <span class="item"><span class="big">${totF}</span>folgas de banco de horas</span>
-    <span class="item"><span class="big">${fmtH(totP)}</span>em horas parciais</span></div>
+    <span class="item"><span class="big">${fmtH(totP)}</span>em horas parciais</span>
+    <button class="btn no-print" data-act="exportarExcel" style="align-self:center">Exportar Excel</button></div>
   <div class="legend"><span><b class="chip mk-T">T</b>Trabalha</span><span><b class="chip mk-F">F</b>Folga semanal</span><span><b class="chip mk-C">C</b>Folga compensatória</span><span><b class="chip mk-P">−1h</b>Saída antecipada (turno 1) ou entrada mais tarde (turno 2)</span><span><b class="chip mk-V">Fér</b>Férias</span><span><b class="chip mk-ok">OK</b>Cobertura mínima atendida</span><span><b class="chip mk-alerta">⚠</b>Abaixo do mínimo</span><span>Toque em um dia para alterar.</span></div>
   <div class="grid-wrap"><table class="grid"><thead><tr><th class="name">${esc(loja.nome)}</th>`;
   for(const d of dias) h+=`<th class="${d.dow===0?'sun':''}"><span class="wd">${WD[d.dow]}</span><span class="dn">${pad(d.d)}</span>${d.fer?'<span class="fer">feriado</span>':''}</th>`;
@@ -1004,6 +1005,7 @@ document.addEventListener('click',e=>{
   if(a==='cell'){ e.stopPropagation(); openPop(el); return; }
   if(a==='set'&&ui.pop){ const x=state.escalas[state.mes][ui.pop.c][ui.pop.d]; x.s=el.dataset.s; x.p=x.s==='P'?+el.dataset.p:0; save(); closePop(); render(); return; }
   if(a==='gerar'){ doGerar(); return; }
+  if(a==='exportarExcel'){ exportarExcel(); return; }
   if(a==='turno'){ state.colabs.find(c=>c.id===el.dataset.c).turno=+el.dataset.t; markDirty(); return; }
   if(a==='sexo'){ state.colabs.find(c=>c.id===el.dataset.c).sexo=el.dataset.s; markDirty(); return; }
   if(a==='vr'){
@@ -1044,6 +1046,51 @@ function markDirty(){ state.dirty=true; save(); render(); }
 function doGerar(){
   if(state.escalas[state.mes]&&!confirm('Gerar de novo substitui a escala atual deste mês, incluindo os ajustes manuais. Continuar?')) return;
   gerar(); ui.tab='escala'; render();
+}
+// Exportar Excel (25/11): gera um arquivo .xls (HTML com marcação do Excel), não um .xlsx de
+// verdade — decisão do Stênio pra não precisar carregar nenhuma biblioteca externa (o app
+// continua só HTML/JS puro). O Excel abre normal, só pode mostrar um aviso de "formato
+// diferente da extensão" na primeira vez. As cores são fixas no tema claro (não dá pra usar
+// var(--cor) aqui, o Excel não entende CSS, só estilo inline em cada célula).
+function exportarExcel(){
+  const loja=state.lojas.find(l=>l.id===ui.loja); const dias=diasDoMes(state.mes);
+  const E=state.escalas[state.mes]; if(!E) return;
+  const cs=state.colabs.filter(c=>c.loja===loja.id);
+  const [y,m]=state.mes.split('-').map(Number);
+  const COR={T:{bg:'#dcf1e4',fg:'#257446'},F:{bg:'#c8102e',fg:'#ffffff'},C:{bg:'#fbeed6',fg:'#a8650a'},P:{bg:'#fbeed6',fg:'#a8650a'},V:{bg:'#e4e8eb',fg:'#7b858d'}};
+  const SUN='#f6eef0', CINZA='#eaeef0', LINHA='#d5dbdf', MUTED='#5d6973';
+  const esc2=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  let h=`<table border="1" cellspacing="0" cellpadding="4" style="border-collapse:collapse;border-color:${LINHA};font-family:Calibri,Arial,sans-serif;font-size:11pt">
+    <tr><th style="background:${CINZA};text-align:left;padding:6px 10px">${esc2(loja.nome)} — ${esc2(MESES[m-1])} de ${y}</th>`;
+  for(const d of dias) h+=`<th style="background:${d.dow===0?SUN:CINZA};padding:4px 2px">${WD[d.dow]}<br>${pad(d.d)}${d.fer?`<br><span style="color:#c8102e;font-size:9pt">feriado</span>`:''}</th>`;
+  h+='</tr>';
+  for(const t of [1,2]){
+    const grp=cs.filter(c=>c.turno===t);
+    h+=`<tr><td style="background:${CINZA};font-weight:bold;text-align:left;padding:6px 10px">${esc2(NOME_TURNO[t])}</td><td colspan="${dias.length}" style="background:${CINZA};text-align:left;color:${MUTED}">seg-sex ${hm(TURNOS.semana[t].ini)}–${hm(TURNOS.semana[t].fim)} · sáb ${hm(TURNOS.sabado[t].ini)}–${hm(TURNOS.sabado[t].fim)} · dom/feriado ${hm(TURNOS.domingo[t].ini)}–${hm(TURNOS.domingo[t].fim)}</td></tr>`;
+    for(const c of grp){
+      h+=`<tr><td style="text-align:left;padding:6px 10px"><b>${esc2(c.nome)}</b><br><span style="color:${MUTED};font-size:9pt">${esc2(c.funcao)}</span></td>`;
+      for(const d of dias){
+        const x=E[c.id][d.iso];
+        const lab=x.s==='F'?'F':x.s==='C'?'C':x.s==='V'?'Fér':x.s==='P'?'−'+(x.p/60)+'h':x.s==='T'?'T':'';
+        const cor=COR[x.s]||{bg:'#ffffff',fg:'#000000'};
+        h+=`<td align="center" style="background:${cor.bg};color:${cor.fg};font-weight:bold">${lab}</td>`;
+      }
+      h+='</tr>';
+    }
+  }
+  h+='</table>';
+  const doc=`<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+  <head><meta charset="UTF-8">
+  <!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet>
+  <x:Name>${esc2(loja.nome)}</x:Name><x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions>
+  </x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]-->
+  </head><body>${h}</body></html>`;
+  const blob=new Blob(['﻿'+doc],{type:'application/vnd.ms-excel'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url; a.download=`Escala ${loja.nome} - ${MESES[m-1]} ${y}.xls`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 /* ---- tela de login (23/11) ---- */
 const telaLogin=document.getElementById('login');
