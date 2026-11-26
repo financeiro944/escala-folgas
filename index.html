@@ -267,6 +267,12 @@ const TURNOS={
   sabado:{1:{ini:520,fim:1084},2:{ini:596,fim:1160}},
   domingo:{1:{ini:540,fim:1104},2:{ini:576,fim:1140}}
 };
+// Horário próprio por loja (26/11): até aqui TURNOS era único pra todo mundo. O Stênio
+// confirmou que Nusa Dua, Decolores, Sol de Copa e Multicores têm um horário igual entre si,
+// mas diferente da Cores da Barra (e da futura Cores do Saara) — por isso agora cada loja pode
+// ter um `turnos` próprio (mesmo formato do TURNOS acima); quem não tiver usa o TURNOS padrão
+// (hoje só a Cores da Barra, até o Stênio passar o horário real dela).
+function turnosDaLoja(loja){ return (loja&&loja.turnos)||TURNOS; }
 const NOME_TURNO={1:'Turno 1',2:'Turno 2'};
 function tipoDia(d){ return especial(d)?'domingo':(d.dow===6?'sabado':'semana'); }
 const WD=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
@@ -405,7 +411,8 @@ function minimoDomTotal(loja){ const r=(loja.cob.domingo||[]).find(x=>x.janela==
 function horario(c,d,cell){
   if(cell.s==='V') return 'Férias'; if(cell.s==='F') return 'Folga semanal'; if(cell.s==='C') return 'Folga compensatória (banco de horas)';
   const turno=turnoDoDia(c,d);
-  const tt=TURNOS[tipoDia(d)][turno];
+  const loja=state.lojas.find(l=>l.id===c.loja);
+  const tt=turnosDaLoja(loja)[tipoDia(d)][turno];
   let ini=tt.ini, fim=tt.fim;
   if(cell.s==='P'){ if(turno===1) fim-=cell.p; else ini+=cell.p; }
   return 'Trabalha das '+hm(ini)+' às '+hm(fim);
@@ -987,8 +994,9 @@ function viewBanco(v){
   const E=state.escalas[state.mes]; const dias=diasDoMes(state.mes);
   const cs=state.colabs.filter(c=>c.loja===loja.id).sort((a,b)=>a.turno-b.turno||a.nome.localeCompare(b.nome));
   const [y,m]=state.mes.split('-').map(Number); const ant=MESES[(m+10)%12];
+  const tzSemana=turnosDaLoja(loja).semana;
   let h=`<section class="sec" style="max-width:none"><h2>${esc(loja.nome)}: compensação em ${MESES[m-1]} do saldo de ${ant}</h2>
-  <p class="muted" style="max-width:72ch">Cada 8h24 de saldo vira uma folga compensatória inteira. O que sobrar vira blocos de 1 hora, de segunda a quinta (sexta e sábado o turno tem que estar completo): o turno 1 sai mais cedo e o turno 2 entra mais tarde, sempre na faixa em que os dois turnos se cruzam (10:56 às 18:04). Sobras menores que 1 hora passam para o mês seguinte. Digite o saldo como 9:10 ou 9h10.</p>
+  <p class="muted" style="max-width:72ch">Cada 8h24 de saldo vira uma folga compensatória inteira. O que sobrar vira blocos de 1 hora, de segunda a quinta (sexta e sábado o turno tem que estar completo): o turno 1 sai mais cedo e o turno 2 entra mais tarde, sempre na faixa em que os dois turnos se cruzam (${hm(tzSemana[2].ini)} às ${hm(tzSemana[1].fim)}). Sobras menores que 1 hora passam para o mês seguinte. Digite o saldo como 9:10 ou 9h10.</p>
   <div class="tbl-wrap"><table class="list"><thead><tr><th>Colaborador</th><th>Turno</th><th class="num">Saldo de ${ant}</th><th class="num">Folgas inteiras</th><th class="num">Horas parciais</th><th class="num">Total planejado</th><th class="num">Fica para o próximo mês</th></tr></thead><tbody>`;
   for(const c of cs){
     let nc=0,np=0; if(E&&E[c.id]) dias.forEach(d=>{const x=E[c.id][d.iso]; if(x.s==='C') nc++; if(x.s==='P') np+=x.p;});
@@ -1029,7 +1037,12 @@ function viewRegras(){
   const [y,m]=state.mes.split('-').map(Number);
   return `<section class="sec"><h2>Regras usadas para gerar a escala</h2><ul class="rules">
   <li>Jornada de 42 horas semanais em 5x2: cinco dias de 8h24 com 1 hora de almoço e duas folgas por semana (segunda a domingo).</li>
-  <li>Turno 1 e turno 2 variam pelo tipo de dia: seg-sex das ${hm(TURNOS.semana[1].ini)}–${hm(TURNOS.semana[1].fim)} (turno 1) e ${hm(TURNOS.semana[2].ini)}–${hm(TURNOS.semana[2].fim)} (turno 2); sábado das ${hm(TURNOS.sabado[1].ini)}–${hm(TURNOS.sabado[1].fim)} e ${hm(TURNOS.sabado[2].ini)}–${hm(TURNOS.sabado[2].fim)}; domingo e feriado das ${hm(TURNOS.domingo[1].ini)}–${hm(TURNOS.domingo[1].fim)} e ${hm(TURNOS.domingo[2].ini)}–${hm(TURNOS.domingo[2].fim)}.</li>
+  <li>Turno 1 e turno 2 variam pelo tipo de dia, e o horário muda por loja (1h de almoço em todos os casos):
+    <ul>
+      <li><b>Cores da Barra</b> (e futura Cores do Saara): seg-sex das ${hm(TURNOS.semana[1].ini)}–${hm(TURNOS.semana[1].fim)} (turno 1) e ${hm(TURNOS.semana[2].ini)}–${hm(TURNOS.semana[2].fim)} (turno 2); sábado das ${hm(TURNOS.sabado[1].ini)}–${hm(TURNOS.sabado[1].fim)} e ${hm(TURNOS.sabado[2].ini)}–${hm(TURNOS.sabado[2].fim)}; domingo e feriado das ${hm(TURNOS.domingo[1].ini)}–${hm(TURNOS.domingo[1].fim)} e ${hm(TURNOS.domingo[2].ini)}–${hm(TURNOS.domingo[2].fim)}.</li>
+      <li><b>Nusa Dua, Decolores, Sol de Copa e Multicores</b>: seg-sábado das 08:40–18:04 (turno 1) e 10:56–20:20 (turno 2); domingo e feriado das 10:00–18:00 e 11:00–19:00.</li>
+    </ul>
+  </li>
   <li>Domingo: todo mundo folga um domingo sim, outro não (regra única, sem diferença por sexo).</li>
   <li>Quem trabalha num domingo ou num feriado de equipe reduzida folga obrigatoriamente no dia seguinte, seja qual for o dia da semana.</li>
   <li>Nenhum colaborador pode trabalhar mais de 7 dias seguidos sem folga — limite rígido, sem exceção, contando inclusive os últimos dias do mês anterior.</li>
