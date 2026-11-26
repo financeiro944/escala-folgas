@@ -293,7 +293,7 @@ function save(){
   if(!login) return;
   salvarEstadoRemoto(login.email,login.senha,state).then(()=>indicarSync(true)).catch(()=>indicarSync(false));
 }
-const ui={tab:'escala',loja:null,pop:null};
+const ui={tab:'escala',loja:null,pop:null,comparando:false};
 
 /* datas */
 function parseISO(s){const [y,m,d]=s.split('-').map(Number);return new Date(Date.UTC(y,m-1,d));}
@@ -334,6 +334,18 @@ const especial=d=>d.dow===0||d.fer;
 const proibidaFolga=d=>d.dow===0||d.dow===5||d.dow===6||d.fer;
 const fmtD=iso=>{const p=iso.split('-');return p[2]+'/'+p[1];};
 function emFerias(c,iso){return (c.ferias||[]).some(([a,b])=>iso>=a&&iso<=b);}
+// Período de pico (25/11, pedido do Stênio pra Sol de Copa em 16-31/12/2026, virou
+// funcionalidade permanente/reutilizável): janela cadastrada por loja em que NINGUÉM tira
+// folga, nem a regra dura de 7 dias seguidos nem domingo/feriado de equipe reduzida se aplicam
+// — risco trabalhista assumido conscientemente pelo Stênio (ver CLAUDE.md). `loja.picos=
+// [{inicio,fim,recuperarAte}]`. Feriado FECHADO (Natal etc.) continua fechado mesmo dentro do
+// pico — isso é tratado à parte em `regrasDoDia`/no laço de feriados, não aqui.
+function emPico(loja,iso){ return (loja.picos||[]).some(p=>iso>=p.inicio&&iso<=p.fim); }
+// Janela de recuperação (25/11): do dia seguinte ao fim do pico até `recuperarAte` (se
+// cadastrado), o gerador tenta dar o MÁXIMO de folga possível pra cada pessoa (em vez do ritmo
+// normal de 2/semana), respeitando só a cobertura mínima — compensa as folgas perdidas no pico
+// de um jeito concentrado, em vez de diluir ao longo de várias semanas normais.
+function emRecuperacao(loja,iso){ return (loja.picos||[]).some(p=>p.recuperarAte&&iso>p.fim&&iso<=p.recuperarAte); }
 const trabalha=x=>x.s==='T'||x.s==='P';
 const ehFolga=x=>x.s==='F'||x.s==='C'||x.s==='V';
 function fmtH(min){ if(!min) return '0h'; const s=min<0?'−':''; min=Math.abs(min); const h=Math.floor(min/60),m=min%60; return s+h+'h'+(m?pad(m):''); }
@@ -381,6 +393,29 @@ function quebraCobertura(loja,E,cs,d,c){ return regrasQueContam(loja,d,c).some(r
 function rotuloRegra(regra){ const jan=regra.janela==='geral'?'loja':regra.janela==='turno1'?'turno 1':'turno 2'; return regra.papel==='_total'?jan:regra.papel+' ('+jan+')'; }
 // usada só pelo gerador de domingo (que precisa de 1 número só): a regra "geral + todo mundo" do domingo
 function minimoDomTotal(loja){ const r=(loja.cob.domingo||[]).find(x=>x.janela==='geral'&&x.papel==='_total'); return r?r.min:0; }
+// Dívida de pico (25/11): quantas folgas uma pessoa deixou de receber nas semanas tocadas por
+// UM período de pico específico — soma, semana a semana (mesma régua de sempre: semana cheia
+// precisa de 2, semana de borda precisa de 1), o que faltou pra bater o normal daquela semana.
+// Olha o estado REAL já gerado (celulaHistorica, inclusive do próprio mês que está sendo
+// processado agora, se o pico for no mesmo mês da recuperação). Pula semana em que a pessoa
+// estava de férias (não é dívida, é férias mesmo).
+function debitoPico(loja,colabId,pico){
+  let total=0;
+  let [y,m]=pico.inicio.slice(0,7).split('-').map(Number);
+  const [yf,mf]=pico.fim.slice(0,7).split('-').map(Number);
+  while(y<yf||(y===yf&&m<=mf)){
+    const diasM=diasDoMes(y+'-'+pad(m));
+    semanas(diasM).forEach(sem=>{
+      if(!sem.dias.some(d=>d.iso>=pico.inicio&&d.iso<=pico.fim)) return;
+      if(sem.dias.some(d=>{ const cel=celulaHistorica(colabId,d.iso); return cel&&cel.s==='V'; })) return;
+      const necessario=sem.dias.length>=7?2:1;
+      const temFolgas=sem.dias.filter(d=>{ const cel=celulaHistorica(colabId,d.iso); return cel&&ehFolga(cel); }).length;
+      total+=Math.max(0,necessario-temFolgas);
+    });
+    m++; if(m>12){m=1;y++;}
+  }
+  return total;
+}
 function horario(c,d,cell){
   if(cell.s==='V') return 'Férias'; if(cell.s==='F') return 'Folga semanal'; if(cell.s==='C') return 'Folga compensatória (banco de horas)';
   const turno=turnoDoDia(c,d);
@@ -449,6 +484,9 @@ function gerar(){
     // Domingo raro e sem fim de semana ficam fora do revezamento padrão de domingo (tratados à
     // parte, cada um do seu jeito — ver blocos próprios abaixo).
     const ordDomingo=ord.filter(c=>!c.folgaFimDeSemana&&!c.domingoRaro);
+    // Período de pico (25/11): nenhuma folga normal pode cair nesses dias, nessa loja — usado
+    // no lugar de proibidaFolga() em todo ponto que escolhe/troca dia de folga aqui dentro.
+    const proibidaFolgaLoja=d=>proibidaFolga(d)||emPico(loja,d.iso);
     // VR (24/11, generalizado 25/11 pra aceitar mais de uma por loja — caso da Sol de Copa,
     // que tem 2 VRs, Dominique e Rosa): pessoa(s) marcada(s) como responsável pela loja quando
     // a gerente não está.
@@ -515,7 +553,7 @@ function gerar(){
     const revertCount={}; cs.forEach(c=>revertCount[c.id]=0);
     domsSun.forEach((d,i)=>{
       const k=Math.floor(epochDay(d.iso)/7);
-      ordDomingo.forEach(c=>{ if(k%2===fase[c.id]&&E[c.id][d.iso].s==='T') E[c.id][d.iso].s='F'; });
+      ordDomingo.forEach(c=>{ if(k%2===fase[c.id]&&E[c.id][d.iso].s==='T'&&!emPico(loja,d.iso)) E[c.id][d.iso].s='F'; });
       let trab=cs.filter(c=>trabalha(E[c.id][d.iso])).length;
       const folgados=ordDomingo.filter(c=>E[c.id][d.iso].s==='F');
       const porMenosChamado=(a,b)=>revertCount[a.id]-revertCount[b.id];
@@ -577,7 +615,7 @@ function gerar(){
       if(!gatilho) return;
       const prox=dias[i+1];
       if(!prox||prox.fer) return; // sem dado do mês seguinte aqui, ou respeita a equipe escolhida pro feriado seguinte
-      cs.forEach(c=>{ if(E[c.id][prox.iso].s==='T'&&trabalha(E[c.id][d.iso])){ E[c.id][prox.iso].s='F'; protegidas.add(c.id+'|'+prox.iso); } });
+      cs.forEach(c=>{ if(E[c.id][prox.iso].s==='T'&&trabalha(E[c.id][d.iso])&&!emPico(loja,prox.iso)){ E[c.id][prox.iso].s='F'; protegidas.add(c.id+'|'+prox.iso); } });
     });
     // Histórico (23/11): se o ÚLTIMO dia do mês anterior foi um gatilho (domingo ou feriado
     // de equipe reduzida) e a pessoa trabalhou nele, o dia 1 deste mês precisa ser folga —
@@ -588,35 +626,59 @@ function gerar(){
         const anteriorIso=diaAnterior(dia0.iso);
         const infoAnt=infoFeriado(anteriorIso);
         const gatilhoAnterior=parseISO(anteriorIso).getUTCDay()===0||(infoAnt&&!infoAnt.fechado);
-        if(gatilhoAnterior) cs.forEach(c=>{ if(E[c.id][dia0.iso].s==='T'&&trabalhouHistorico(c.id,anteriorIso)){ E[c.id][dia0.iso].s='F'; protegidas.add(c.id+'|'+dia0.iso); } });
+        if(gatilhoAnterior) cs.forEach(c=>{ if(E[c.id][dia0.iso].s==='T'&&trabalhouHistorico(c.id,anteriorIso)&&!emPico(loja,dia0.iso)){ E[c.id][dia0.iso].s='F'; protegidas.add(c.id+'|'+dia0.iso); } });
       }
     }
+    // Dívida de pico (25/11): quantas folgas cada pessoa ainda deve, somando toda semana de
+    // todo período de pico desta loja cuja recuperação alcança este mês (ver debitoPico()) —
+    // calculado 1x por loja, consumido semana a semana abaixo conforme a recuperação concede.
+    const debitoRestante={};
+    cs.forEach(c=>{
+      let d=0;
+      (loja.picos||[]).forEach(p=>{ if(p.recuperarAte&&dias.some(dd=>dd.iso>p.fim&&dd.iso<=p.recuperarAte)) d+=debitoPico(loja,c.id,p); });
+      debitoRestante[c.id]=d;
+    });
     for(const sem of semanas(dias)){
       // Regime 5x2 (23/11): semana cheia (7 dias) precisa de 2 folgas; semana "completa"
       // (>=4 dias, pode ser borda do mês) precisa de pelo menos 1. Domingo (fase) e a
       // segunda obrigatória (regra acima), quando caem nessa semana, já contam para a conta.
       const completa=sem.dias.length>=4;
       const necessario=sem.dias.length>=7?2:1;
-      const urg=c=>{ let m=Infinity; for(const d of sem.dias){ if(proibidaFolga(d)||E[c.id][d.iso].s!=='T') continue; const {b,a}=sequencia(E[c.id],dias,dias.indexOf(d)); m=Math.min(m,Math.max(0,b-4)+Math.max(0,a-4)); } return m===Infinity?0:m; };
+      // Recuperação (25/11, pós-pico): nessa janela, além do ritmo normal da semana, tenta
+      // também abater a dívida de pico de cada pessoa (ver debitoRestante acima) — nunca mais
+      // do que ela deve, e sempre travado pela cobertura mínima (não é obrigação legal, é só
+      // uma concentração deliberada do descanso).
+      const emRec=sem.dias.some(d=>emRecuperacao(loja,d.iso));
+      const urg=c=>{ let m=Infinity; for(const d of sem.dias){ if(proibidaFolgaLoja(d)||E[c.id][d.iso].s!=='T') continue; const {b,a}=sequencia(E[c.id],dias,dias.indexOf(d)); m=Math.min(m,Math.max(0,b-4)+Math.max(0,a-4)); } return m===Infinity?0:m; };
       const ordSem=[...ord].sort((x,y)=>urg(y)-urg(x));
       for(const c of ordSem){
         if(sem.dias.some(d=>E[c.id][d.iso].s==='V')) continue;
         // Sem fim de semana (25/11): já folga sábado+domingo toda semana por contrato — não
         // entra no gerador de folga semanal (senão ganharia uma 3ª folga indevida).
         if(c.folgaFimDeSemana) continue;
-        if(!completa&&urg(c)<=0) continue;
+        if(!completa&&!emRec&&urg(c)<=0) continue;
         const jaTem=sem.dias.filter(d=>ehFolga(E[c.id][d.iso])).length;
         // semana incompleta: a folga é um extra de alívio (1, igual já era antes), não a
-        // obrigação cheia de 2 — por isso o alvo aqui é "mais 1", não "necessario".
-        const alvo=completa?necessario:jaTem+1;
+        // obrigação cheia de 2 — por isso o alvo aqui é "mais 1", não "necessario". Em
+        // recuperação, o alvo é o normal da semana + o quanto der pra abater da dívida,
+        // travado em no máximo "dias da semana" (não dá pra folgar mais dias do que a semana
+        // tem).
+        const debitoAlvo=emRec?Math.min(debitoRestante[c.id]||0,sem.dias.length-necessario):0;
+        const alvo=emRec?(necessario+debitoAlvo):(completa?necessario:jaTem+1);
         let faltam=alvo-jaTem;
         for(let n=0;n<faltam;n++){
           let best=null,bs=Infinity;
-          for(const d of sem.dias){ if(proibidaFolga(d)||E[c.id][d.iso].s!=='T') continue; const sc=pontuar(E,dias,loja,cs,c,d); if(sc<bs){bs=sc;best=d;} }
-          // na semana incompleta a folga é um extra, não obrigação legal: não vale a pena
-          // furar a cobertura mínima só para aliviar uma sequência (por isso só na cheia).
-          if(best&&(completa||!quebraCobertura(loja,E,cs,best,c))) E[c.id][best.iso].s='F';
+          for(const d of sem.dias){ if(proibidaFolgaLoja(d)||E[c.id][d.iso].s!=='T') continue; const sc=pontuar(E,dias,loja,cs,c,d); if(sc<bs){bs=sc;best=d;} }
+          // na semana incompleta (ou em recuperação) a folga é um extra, não obrigação legal:
+          // não vale a pena furar a cobertura mínima só pra aliviar uma sequência ou acelerar a
+          // recuperação (por isso só na semana cheia normal é que ignora a cobertura).
+          if(best&&((completa&&!emRec)||!quebraCobertura(loja,E,cs,best,c))) E[c.id][best.iso].s='F';
           else break;
+        }
+        if(emRec){
+          const temAgora=sem.dias.filter(d=>ehFolga(E[c.id][d.iso])).length;
+          const excedente=Math.max(0,temAgora-necessario);
+          debitoRestante[c.id]=Math.max(0,(debitoRestante[c.id]||0)-Math.min(debitoRestante[c.id]||0,excedente));
         }
       }
     }
@@ -636,7 +698,7 @@ function gerar(){
           for(const pessoa of candidatas){
             let melhor=null,bs=Infinity;
             for(const d2 of sem.dias){
-              if(d2.iso===d.iso||proibidaFolga(d2)) continue;
+              if(d2.iso===d.iso||proibidaFolgaLoja(d2)) continue;
               if(E[pessoa.id][d2.iso].s!=='T') continue;
               if(quebraCobertura(loja,E,cs,d2,pessoa)) continue;
               const sc=pontuar(E,dias,loja,cs,pessoa,d2);
@@ -669,7 +731,7 @@ function gerar(){
       const row=E[c.id]; let streak=streakHistorico(c.id);
       for(const d of dias){
         if(row[d.iso].s==='V'){ streak=0; continue; }
-        if(trabalha(row[d.iso])){ streak++; if(streak>7){ row[d.iso].s='F'; streak=0; } }
+        if(trabalha(row[d.iso])){ streak++; if(streak>7&&!emPico(loja,d.iso)){ row[d.iso].s='F'; streak=0; } }
         else streak=0;
       }
     }
@@ -719,7 +781,9 @@ function validar(){
         // Sem fim de semana (25/11): folga sábado+domingo fixa por contrato já cobre a conta
         // semanal, mesmo em semana de borda do mês sem sábado/domingo dentro do mês — não
         // precisa (nem pode) ganhar folga extra durante a semana pra "completar" a conta.
-        if(sem.dias.length<4||sem.dias.some(d=>row[d.iso].s==='V')||c.folgaFimDeSemana) continue;
+        // Pico (25/11): semana tocada por período de pico não é checada — ali a folga
+        // semanal foi deliberadamente suspensa (ver loja.picos/emPico).
+        if(sem.dias.length<4||sem.dias.some(d=>row[d.iso].s==='V'||emPico(loja,d.iso))||c.folgaFimDeSemana) continue;
         // Regime 5x2 (23/11): semana cheia (7 dias) precisa de 2 folgas semanais; semana
         // na borda do mês (4-6 dias visíveis) precisa de pelo menos 1.
         const necessario=sem.dias.length>=7?2:1;
@@ -735,7 +799,7 @@ function validar(){
       // Dua (Vanicélia, licença maternidade): ela não devia contar como "folga indevida" só
       // por estar afastada numa sexta/sábado, isso não é uma escolha de folga normal.
       dias.forEach(d=>{
-        if((d.dow===5||(d.dow===6&&!c.folgaFimDeSemana))&&!d.fer&&row[d.iso].s!=='V'&&ehFolga(row[d.iso])){
+        if((d.dow===5||(d.dow===6&&!c.folgaFimDeSemana))&&!d.fer&&!emPico(loja,d.iso)&&row[d.iso].s!=='V'&&ehFolga(row[d.iso])){
           info.err++; r.cel[c.id+'|'+d.iso]='err';
           L.push({n:'e',k:'reg',t:`${c.nome}: folga em ${fmtD(d.iso)} (${WDL[d.dow]}) — turno tem que estar completo sexta e sábado.`});
         }
@@ -746,6 +810,9 @@ function validar(){
       const doms=dias.filter(d=>d.dow===0);
       if(!c.domingoRaro) for(let i=1;i<doms.length;i++){
         const w=j=>trabalha(row[doms[j].iso]);
+        // Pico (25/11): se qualquer um dos 2 domingos está no período de pico, não conta —
+        // trabalhar domingos seguidos ali é esperado, não violação.
+        if(emPico(loja,doms[i].iso)||emPico(loja,doms[i-1].iso)) continue;
         if(w(i)&&w(i-1)){ info.err++; r.cel[c.id+'|'+doms[i].iso]='err'; L.push({n:'e',k:'reg',t:`${c.nome}: trabalha nos domingos ${fmtD(doms[i-1].iso)} e ${fmtD(doms[i].iso)} seguidos.`}); }
       }
       // Histórico (23/11): o primeiro domingo do mês contra o último domingo do mês anterior.
@@ -763,7 +830,7 @@ function validar(){
         const gatilho=d.dow===0||(d.fer&&!d.ferFechado);
         if(!gatilho) return;
         const prox=dias[i+1]; if(!prox) return;
-        if(row[d.iso].s!=='V'&&trabalha(row[d.iso])&&trabalha(row[prox.iso])){
+        if(row[d.iso].s!=='V'&&trabalha(row[d.iso])&&trabalha(row[prox.iso])&&!emPico(loja,prox.iso)){
           info.err++; r.cel[c.id+'|'+prox.iso]='err';
           L.push({n:'e',k:'reg',t:`${c.nome}: trabalhou em ${fmtD(d.iso)} mas não folgou no dia seguinte (${fmtD(prox.iso)}).`});
         }
@@ -785,7 +852,9 @@ function validar(){
       let run=0, iso=diaAnterior(dias[0].iso);
       for(let passos=0;passos<60;passos++){ const cel=celulaHistorica(c.id,iso); if(!cel||cel.s==='V'||!trabalha(cel)) break; run++; iso=diaAnterior(iso); }
       dias.forEach((d,i)=>{ if(trabalha(row[d.iso])) run++; else run=0;
-        if(run>7){ r.cel[c.id+'|'+d.iso]='err';
+        // Pico (25/11): sequência que estoura 7 dias por causa do período de pico não é
+        // marcada como erro aqui — risco assumido conscientemente (ver loja.picos/emPico).
+        if(run>7&&!emPico(loja,d.iso)){ r.cel[c.id+'|'+d.iso]='err';
           const next=dias[i+1]; if(!next||!trabalha(row[next.iso])){ info.err++; L.push({n:'e',k:'seq',t:`${c.nome}: ${run} dias seguidos de trabalho até ${fmtD(d.iso)} (acima do limite de 7).`}); } } });
       const plan=dias.reduce((s,d)=>s+(row[d.iso].s==='C'?MIN_DIA:row[d.iso].s==='P'?row[d.iso].p:0),0);
       info.plan=plan; info.resto=(c.saldo||0)-plan;
@@ -829,7 +898,8 @@ function viewEscala(v){
     <span class="item ${nSeq?'bad':'good'}"><span class="big">${nSeq}</span>sequências acima de 7 dias</span>
     <span class="item"><span class="big">${totF}</span>folgas de banco de horas</span>
     <span class="item"><span class="big">${fmtH(totP)}</span>em horas parciais</span>
-    <button class="btn no-print" data-act="exportarExcel" style="align-self:center">Exportar Excel</button></div>
+    <button class="btn no-print" data-act="exportarExcel" style="align-self:center">Exportar Excel</button>
+    ${(loja.picos||[]).length?`<button class="btn no-print" data-act="comparar" style="align-self:center">${ui.comparando?'Fechar comparação':'Comparar com/sem pico'}</button>`:''}</div>
   <div class="legend"><span><b class="chip mk-T">T</b>Trabalha</span><span><b class="chip mk-F">F</b>Folga semanal</span><span><b class="chip mk-C">C</b>Folga compensatória</span><span><b class="chip mk-P">−1h</b>Saída antecipada (turno 1) ou entrada mais tarde (turno 2)</span><span><b class="chip mk-V">Fér</b>Férias</span><span><b class="chip mk-ok">OK</b>Cobertura mínima atendida</span><span><b class="chip mk-alerta">⚠</b>Abaixo do mínimo</span><span>Toque em um dia para alterar.</span></div>
   <div class="grid-wrap"><table class="grid"><thead><tr><th class="name">${esc(loja.nome)}</th>`;
   for(const d of dias) h+=`<th class="${d.dow===0?'sun':''}"><span class="wd">${WD[d.dow]}</span><span class="dn">${pad(d.d)}</span>${d.fer?'<span class="fer">feriado</span>':''}</th>`;
@@ -877,6 +947,30 @@ function viewEscala(v){
   }
   h+='</tr>';
   h+='</tfoot></table></div>';
+  // Comparar com/sem pico (25/11): mostra uma 2ª tabela, somente leitura, com a escala do
+  // mesmo mês como se não existisse nenhum período de pico cadastrado nessa loja — pra ver na
+  // hora o efeito do pico/recuperação. Dia marcado (borda) é onde as 2 versões divergem.
+  if(ui.comparando&&(loja.picos||[]).length){
+    const Esp=gerarSemPico(state.mes,loja.id);
+    h+=`<h2 style="margin:28px 0 8px">Comparação: como ficaria SEM o período de pico</h2>
+    <p class="muted" style="max-width:72ch">Só visualização — não altera a escala real. Dias com borda vermelha são onde essa versão difere da escala de cima.</p>
+    <div class="grid-wrap"><table class="grid"><thead><tr><th class="name">${esc(loja.nome)} (sem pico)</th>`;
+    for(const d of dias) h+=`<th class="${d.dow===0?'sun':''}"><span class="wd">${WD[d.dow]}</span><span class="dn">${pad(d.d)}</span>${d.fer?'<span class="fer">feriado</span>':''}</th>`;
+    h+='</tr></thead><tbody>';
+    for(const t of [1,2]){
+      const grp=cs.filter(c=>c.turno===t);
+      for(const c of grp){
+        h+=`<tr class="t${t}"><td class="name"><span class="n">${esc(c.nome)}</span></td>`;
+        for(const d of dias){
+          const x=Esp[c.id][d.iso]; const difere=x.s!==E[c.id][d.iso].s;
+          const lab=x.s==='F'?'F':x.s==='C'?'C':x.s==='V'?'Fér':x.s==='P'?'−'+(x.p/60)+'h':x.s==='T'?'T':'';
+          h+=`<td class="cell s-${x.s} ${d.dow===0?'sun':''}${difere?' err':''}" title="${difere?'Diferente da escala com pico':''}">${lab?`<b class="chip mk-${x.s}">${lab}</b>`:'<span class="mark"></span>'}</td>`;
+        }
+        h+='</tr>';
+      }
+    }
+    h+='</tbody></table></div>';
+  }
   h+=`<section class="issues"><h2>${L.length?'Pontos para revisar':'Tudo certo com as regras nesta loja'}</h2>${L.length?'<ul>'+L.map(x=>`<li class="${x.n==='e'?'':x.n}">${esc(x.t)}</li>`).join('')+'</ul>':''}</section>`;
   return h;
 }
@@ -900,8 +994,18 @@ function viewEquipes(){
       hh+=`</div><button class="btn" data-act="cobAdd" data-l="${loja.id}" data-g="${chave}">+ adicionar regra</button></div>`;
       return hh;
     };
+    const picos=loja.picos||(loja.picos=[]);
+    const picoHtml=`<div class="cov-grupo"><h3>Períodos de pico (ninguém tira folga)</h3>
+      <p class="muted" style="max-width:60ch">Exceção às regras normais, inclusive ao limite de 7 dias seguidos — usar com cuidado (ver CLAUDE.md). "Recuperar até" é opcional: se preenchido, do dia seguinte ao fim do pico até essa data o gerador tenta dar o máximo de folga possível (respeitando só a cobertura mínima) pra compensar concentrado.</p>
+      <div class="cov-lista">${picos.map((p,i)=>`<div class="cov-regra">
+        de <input type="date" value="${p.inicio||''}" data-act="picoInicio" data-l="${loja.id}" data-i="${i}" aria-label="Início do pico">
+        até <input type="date" value="${p.fim||''}" data-act="picoFim" data-l="${loja.id}" data-i="${i}" aria-label="Fim do pico">
+        recuperar até <input type="date" value="${p.recuperarAte||''}" data-act="picoRecuperar" data-l="${loja.id}" data-i="${i}" aria-label="Recuperar até">
+        <button data-act="picoDel" data-l="${loja.id}" data-i="${i}" aria-label="Remover período de pico">×</button>
+      </div>`).join('')||'<span class="muted">Nenhum período de pico cadastrado.</span>'}</div>
+      <button class="btn" data-act="picoAdd" data-l="${loja.id}">+ adicionar período de pico</button></div>`;
     h+=`<section class="store"><div class="store-head"><h2>${esc(loja.nome)}</h2></div>
-    <div class="cov-grupos">${grupoCob('semana','Segunda a sexta')}${grupoCob('sabado','Sábado')}${grupoCob('domingo','Domingo e feriado')}</div>
+    <div class="cov-grupos">${grupoCob('semana','Segunda a sexta')}${grupoCob('sabado','Sábado')}${grupoCob('domingo','Domingo e feriado')}${picoHtml}</div>
     <div class="tbl-wrap"><table class="list"><thead><tr><th>Colaborador</th><th>Função</th><th>VR</th><th>Turno</th><th>Sexo</th><th>Loja</th><th>Férias no período</th></tr></thead><tbody>`;
     for(const c of cs){
       h+=`<tr><td><b>${esc(c.nome)}</b></td><td>${esc(c.funcao)}</td>
@@ -1015,6 +1119,7 @@ document.addEventListener('click',e=>{
   if(a==='set'&&ui.pop){ const x=state.escalas[state.mes][ui.pop.c][ui.pop.d]; x.s=el.dataset.s; x.p=x.s==='P'?+el.dataset.p:0; save(); closePop(); render(); return; }
   if(a==='gerar'){ doGerar(); return; }
   if(a==='exportarExcel'){ exportarExcel(); return; }
+  if(a==='comparar'){ ui.comparando=!ui.comparando; render(); return; }
   if(a==='turno'){ state.colabs.find(c=>c.id===el.dataset.c).turno=+el.dataset.t; markDirty(); return; }
   if(a==='sexo'){ state.colabs.find(c=>c.id===el.dataset.c).sexo=el.dataset.s; markDirty(); return; }
   if(a==='vr'){
@@ -1025,6 +1130,8 @@ document.addEventListener('click',e=>{
   }
   if(a==='cobAdd'){ const loja=state.lojas.find(l=>l.id===el.dataset.l); (loja.cob[el.dataset.g]=loja.cob[el.dataset.g]||[]).push({janela:'geral',papel:'_total',min:0}); markDirty(); return; }
   if(a==='cobDel'){ const loja=state.lojas.find(l=>l.id===el.dataset.l); loja.cob[el.dataset.g].splice(+el.dataset.i,1); markDirty(); return; }
+  if(a==='picoAdd'){ const loja=state.lojas.find(l=>l.id===el.dataset.l); (loja.picos=loja.picos||[]).push({inicio:'',fim:'',recuperarAte:''}); markDirty(); return; }
+  if(a==='picoDel'){ const loja=state.lojas.find(l=>l.id===el.dataset.l); loja.picos.splice(+el.dataset.i,1); markDirty(); return; }
   if(a==='delfer'){ state.feriados=state.feriados.filter(f=>f.data!==el.dataset.f); delete state.feriadoEquipe[el.dataset.f]; markDirty(); return; }
   if(a==='addfer'){ const v=$('#novofer').value; if(v&&!state.feriados.some(f=>f.data===v)) state.feriados.push({data:v,fechado:false}); markDirty(); return; }
   if(a==='ferFechado'){ const f=state.feriados.find(x=>x.data===el.dataset.f); if(f){ f.fechado=!f.fechado; markDirty(); } return; }
@@ -1043,6 +1150,9 @@ document.addEventListener('change',e=>{
   if(a==='cobMin'){ state.lojas.find(l=>l.id===el.dataset.l).cob[el.dataset.g][+el.dataset.i].min=Math.max(0,+el.value||0); markDirty(); }
   if(a==='moveloja'){ state.colabs.find(c=>c.id===el.dataset.c).loja=el.value; markDirty(); }
   if(a==='saldo'){ state.colabs.find(c=>c.id===el.dataset.c).saldo=parseSaldo(el.value); markDirty(); }
+  if(a==='picoInicio'){ state.lojas.find(l=>l.id===el.dataset.l).picos[+el.dataset.i].inicio=el.value; markDirty(); }
+  if(a==='picoFim'){ state.lojas.find(l=>l.id===el.dataset.l).picos[+el.dataset.i].fim=el.value; markDirty(); }
+  if(a==='picoRecuperar'){ state.lojas.find(l=>l.id===el.dataset.l).picos[+el.dataset.i].recuperarAte=el.value; markDirty(); }
 });
 document.addEventListener('keydown',e=>{ if(e.key==='Escape') closePop(); });
 window.addEventListener('resize',closePop);
@@ -1054,6 +1164,22 @@ function markDirty(){ state.dirty=true; save(); render(); }
 function doGerar(){
   if(state.escalas[state.mes]&&!confirm('Gerar de novo substitui a escala atual deste mês, incluindo os ajustes manuais. Continuar?')) return;
   gerar(); ui.tab='escala'; render();
+}
+// Comparar com/sem pico (25/11): gera uma 2ª versão da escala do mês, como se a loja não
+// tivesse nenhum período de pico cadastrado, SEM mexer na escala real — troca o `state` global
+// por uma cópia temporária só durante o gerar(), depois devolve o original. Não salva nada,
+// é só pra visualizar a diferença lado a lado.
+function gerarSemPico(mes,lojaId){
+  const original=state;
+  const copia=JSON.parse(JSON.stringify(original));
+  copia.mes=mes;
+  const lj=copia.lojas.find(l=>l.id===lojaId);
+  if(lj) lj.picos=[];
+  state=copia;
+  gerar();
+  const resultado=state.escalas[mes];
+  state=original;
+  return resultado;
 }
 // Exportar Excel (25/11): gera um arquivo .xls (HTML com marcação do Excel), não um .xlsx de
 // verdade — decisão do Stênio pra não precisar carregar nenhuma biblioteca externa (o app
