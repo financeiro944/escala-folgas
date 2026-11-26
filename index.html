@@ -1099,26 +1099,43 @@ function exportarExcel(){
   const cs=state.colabs.filter(c=>c.loja===loja.id);
   const [y,m]=state.mes.split('-').map(Number);
   const COR={T:{bg:'#dcf1e4',fg:'#257446'},F:{bg:'#c8102e',fg:'#ffffff'},C:{bg:'#fbeed6',fg:'#a8650a'},P:{bg:'#fbeed6',fg:'#a8650a'},V:{bg:'#e4e8eb',fg:'#7b858d'}};
-  const SUN='#f6eef0', CINZA='#eaeef0', LINHA='#d5dbdf', MUTED='#5d6973';
+  const SUN='#f6eef0', CINZA='#eaeef0', LINHA='#d5dbdf', MUTED='#5d6973', VERDE='#257446', AZUL='#1d6fb8';
   const esc2=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  // Mesma ordem e cor por turno da tela (25/11): Gerente, Vendedor, Caixa, Estoquista; nome
+  // verde = turno 1, azul = turno 2. Sem mais a linha divisória por turno.
+  const ORDEM_PAPEL=['gerente','vendedor','caixa','estoquista'];
+  const prioridadePapel=c=>{ const i=ORDEM_PAPEL.indexOf(papelDe(c.funcao)); return i===-1?ORDEM_PAPEL.length:i; };
+  const csOrdenado=[...cs].sort((a,b)=>prioridadePapel(a)-prioridadePapel(b)||a.turno-b.turno||a.nome.localeCompare(b.nome));
   let h=`<table border="1" cellspacing="0" cellpadding="4" style="border-collapse:collapse;border-color:${LINHA};font-family:Calibri,Arial,sans-serif;font-size:11pt">
     <tr><th style="background:${CINZA};text-align:left;padding:6px 10px">${esc2(loja.nome)} — ${esc2(MESES[m-1])} de ${y}</th>`;
   for(const d of dias) h+=`<th style="background:${d.dow===0?SUN:CINZA};padding:4px 2px">${WD[d.dow]}<br>${pad(d.d)}${d.fer?`<br><span style="color:#c8102e;font-size:9pt">feriado</span>`:''}</th>`;
-  h+='</tr>';
-  for(const t of [1,2]){
-    const grp=cs.filter(c=>c.turno===t);
-    h+=`<tr><td style="background:${CINZA};font-weight:bold;text-align:left;padding:6px 10px">${esc2(NOME_TURNO[t])}</td><td colspan="${dias.length}" style="background:${CINZA};text-align:left;color:${MUTED}">seg-sex ${hm(TURNOS.semana[t].ini)}–${hm(TURNOS.semana[t].fim)} · sáb ${hm(TURNOS.sabado[t].ini)}–${hm(TURNOS.sabado[t].fim)} · dom/feriado ${hm(TURNOS.domingo[t].ini)}–${hm(TURNOS.domingo[t].fim)}</td></tr>`;
-    for(const c of grp){
-      h+=`<tr><td style="text-align:left;padding:6px 10px"><b>${esc2(c.nome)}</b><br><span style="color:${MUTED};font-size:9pt">${esc2(c.funcao)}</span></td>`;
-      for(const d of dias){
-        const x=E[c.id][d.iso];
-        const lab=x.s==='F'?'F':x.s==='C'?'C':x.s==='V'?'Fér':x.s==='P'?'−'+(x.p/60)+'h':x.s==='T'?'T':'';
-        const cor=COR[x.s]||{bg:'#ffffff',fg:'#000000'};
-        h+=`<td align="center" style="background:${cor.bg};color:${cor.fg};font-weight:bold">${lab}</td>`;
-      }
-      h+='</tr>';
+  h+=`<th style="background:${CINZA}">Trabalhou</th><th style="background:${CINZA}">Folgas</th><th style="background:${CINZA}">Folgas dom.</th></tr>`;
+  for(const c of csOrdenado){
+    const corNome=c.turno===1?VERDE:AZUL;
+    h+=`<tr><td style="text-align:left;padding:6px 10px"><b style="color:${corNome}">${esc2(c.nome)}</b><br><span style="color:${MUTED};font-size:9pt">${esc2(c.funcao)}</span></td>`;
+    for(const d of dias){
+      const x=E[c.id][d.iso];
+      const lab=x.s==='F'?'F':x.s==='C'?'C':x.s==='V'?'Fér':x.s==='P'?'−'+(x.p/60)+'h':x.s==='T'?'T':'';
+      const cor=COR[x.s]||{bg:'#ffffff',fg:'#000000'};
+      h+=`<td align="center" style="background:${cor.bg};color:${cor.fg};font-weight:bold">${lab}</td>`;
     }
+    const row=E[c.id];
+    const totTrab=dias.filter(d=>trabalha(row[d.iso])).length;
+    const totFolga=dias.filter(d=>row[d.iso].s==='F'||row[d.iso].s==='C').length;
+    const totFolgaDom=dias.filter(d=>d.dow===0&&(row[d.iso].s==='F'||row[d.iso].s==='C')).length;
+    h+=`<td align="center" style="font-weight:bold">${totTrab}</td><td align="center" style="font-weight:bold">${totFolga}</td><td align="center" style="font-weight:bold">${totFolgaDom}</td></tr>`;
   }
+  // Total por função, por dia (25/11) — mesma linha que já existe na tela.
+  const papeisExistentes=[...new Set(cs.map(c=>papelDe(c.funcao)))];
+  papeisExistentes.forEach(papel=>{
+    const rotulo=(PAPEIS.find(p=>p[0]===papel)||[papel,papel])[1];
+    h+=`<tr><td style="background:${CINZA};font-weight:bold;text-align:left;padding:6px 10px">Total: ${esc2(rotulo)}</td>`;
+    for(const d of dias){
+      const n=cs.filter(c=>papelDe(c.funcao)===papel&&trabalha(E[c.id][d.iso])).length;
+      h+=`<td align="center" style="background:${CINZA}">${n}</td>`;
+    }
+    h+=`<td style="background:${CINZA}"></td><td style="background:${CINZA}"></td><td style="background:${CINZA}"></td></tr>`;
+  });
   h+='</table>';
   const doc=`<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
   <head><meta charset="UTF-8">
