@@ -882,6 +882,13 @@ function viewEscala(v){
     }
     h+='<td class="na">—</td><td class="na">—</td><td class="na">—</td></tr>';
   });
+  // Total geral de colaboradores presentes no dia, somando todas as funções (25/11).
+  h+='<tr><td class="name">Total de colaboradores</td>';
+  for(const d of dias){
+    const n=cs.filter(c=>trabalha(E[c.id][d.iso])).length;
+    h+=`<td>${n}</td>`;
+  }
+  h+='<td class="na">—</td><td class="na">—</td><td class="na">—</td></tr>';
   const grupos=[], vistos=new Set();
   ['semana','sabado','domingo'].forEach(k=>aplicarPisoVendedor(loja.cob[k]).forEach(regra=>{
     const chave=regra.janela+'|'+regra.papel;
@@ -1136,6 +1143,12 @@ function exportarExcel(){
     }
     h+=`<td style="background:${CINZA}"></td><td style="background:${CINZA}"></td><td style="background:${CINZA}"></td></tr>`;
   });
+  h+=`<tr><td style="background:${CINZA};font-weight:bold;text-align:left;padding:6px 10px">Total de colaboradores</td>`;
+  for(const d of dias){
+    const n=cs.filter(c=>trabalha(E[c.id][d.iso])).length;
+    h+=`<td align="center" style="background:${CINZA}">${n}</td>`;
+  }
+  h+=`<td style="background:${CINZA}"></td><td style="background:${CINZA}"></td><td style="background:${CINZA}"></td></tr>`;
   h+='</table>';
   const doc=`<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
   <head><meta charset="UTF-8">
