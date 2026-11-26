@@ -449,12 +449,15 @@ function gerar(){
     // Domingo raro e sem fim de semana ficam fora do revezamento padrão de domingo (tratados à
     // parte, cada um do seu jeito — ver blocos próprios abaixo).
     const ordDomingo=ord.filter(c=>!c.folgaFimDeSemana&&!c.domingoRaro);
-    // VR (24/11): a pessoa marcada como responsável pela loja quando a gerente não está.
-    // Nunca pode folgar no mesmo dia que a gerente — tratado em dois pontos abaixo: a fase
-    // de domingo (logo adiante) e uma troca de dia depois da folga semanal (mais abaixo).
+    // VR (24/11, generalizado 25/11 pra aceitar mais de uma por loja — caso da Sol de Copa,
+    // que tem 2 VRs): pessoa(s) marcada(s) como responsável pela loja quando a gerente não
+    // está. Nenhuma delas pode folgar no mesmo dia que a gerente — tratado em dois pontos
+    // abaixo: a fase de domingo (logo adiante) e uma troca de dia depois da folga semanal
+    // (mais abaixo). Não precisa que as VRs nunca folguem entre si (só cada uma vs. a
+    // gerente) — com 2+ VRs e fase binária (0/1) não dá pra garantir as 3 sempre diferentes
+    // ao mesmo tempo, mas o que importa é a gerente nunca ficar sozinha sem nenhuma VR.
     const gerenteDaLoja=cs.find(c=>papelDe(c.funcao)==='gerente');
-    const vrDaLoja=cs.find(c=>c.vr);
-    const temParGerenteVr=!!(gerenteDaLoja&&vrDaLoja&&gerenteDaLoja.id!==vrDaLoja.id);
+    const vrsDaLoja=cs.filter(c=>c.vr&&(!gerenteDaLoja||c.id!==gerenteDaLoja.id));
     // Domingo (23/11): regra unificada para todo mundo — trabalha um domingo sim,
     // outro não (sem diferença por sexo, que era a regra antiga).
     const fase={}; ordDomingo.forEach((c,i)=>fase[c.id]=i%2);
@@ -467,7 +470,7 @@ function gerar(){
     // desfazer um par de prioridade mais alta já resolvido (ex.: se a VR também for uma das
     // 2 caixas, a correção da dupla de caixa mexe na OUTRA caixa, nunca desfaz a da VR).
     const paresDevemDiferir=[];
-    if(temParGerenteVr) paresDevemDiferir.push([gerenteDaLoja.id,vrDaLoja.id]);
+    if(gerenteDaLoja) vrsDaLoja.forEach(vr=>paresDevemDiferir.push([gerenteDaLoja.id,vr.id]));
     const gruposPapel={};
     ordDomingo.forEach(c=>{ const chave=c.turno+'|'+papelDe(c.funcao); (gruposPapel[chave]=gruposPapel[chave]||[]).push(c); });
     Object.values(gruposPapel).forEach(grupo=>{ for(let i=1;i<grupo.length;i++) paresDevemDiferir.push([grupo[0].id,grupo[i].id]); });
@@ -1009,11 +1012,10 @@ document.addEventListener('click',e=>{
   if(a==='turno'){ state.colabs.find(c=>c.id===el.dataset.c).turno=+el.dataset.t; markDirty(); return; }
   if(a==='sexo'){ state.colabs.find(c=>c.id===el.dataset.c).sexo=el.dataset.s; markDirty(); return; }
   if(a==='vr'){
+    // Pode ter mais de 1 VR por loja (25/11 — caso da Sol de Copa, 2 VRs pra 1 gerente): o
+    // botão só liga/desliga a pessoa clicada, sem desligar as outras VRs da mesma loja.
     const alvo=state.colabs.find(c=>c.id===el.dataset.c);
-    const ligar=!alvo.vr;
-    // só 1 VR por loja (cobre a gerente dessa loja) — marcar outra pessoa desliga a anterior.
-    if(ligar) state.colabs.forEach(c=>{ if(c.loja===alvo.loja) c.vr=false; });
-    alvo.vr=ligar; markDirty(); return;
+    alvo.vr=!alvo.vr; markDirty(); return;
   }
   if(a==='cobAdd'){ const loja=state.lojas.find(l=>l.id===el.dataset.l); (loja.cob[el.dataset.g]=loja.cob[el.dataset.g]||[]).push({janela:'geral',papel:'_total',min:0}); markDirty(); return; }
   if(a==='cobDel'){ const loja=state.lojas.find(l=>l.id===el.dataset.l); loja.cob[el.dataset.g].splice(+el.dataset.i,1); markDirty(); return; }
