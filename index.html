@@ -522,8 +522,19 @@ function gerar(){
     // juntos). Corrigido: em vez de pares, distribui cada grupo o mais equilibrado possível
     // entre as 2 fases (metade/metade), respeitando quem já estiver travado por um par de
     // prioridade mais alta (gerente/VR).
+    // Papéis com regra "geral" no domingo (27/11): a cobertura soma os 2 turnos juntos, então
+    // o equilíbrio de fase também precisa juntar os 2 turnos — senão, quando só tem 1 pessoa de
+    // cada turno nesse papel (ex.: Cores da Barra, 1 estoquista turno 1 + 1 estoquista turno 2,
+    // mínimo geral 1), elas nunca são comparadas entre si (cada uma forma um grupo de tamanho 1)
+    // e podem cair na mesma fase por coincidência, deixando a loja sem ninguém do papel no
+    // domingo (achado testando a Cores da Barra: estoquista zerado em 4 datas do mês).
+    const papeisGeralDomingo=new Set((loja.cob.domingo||[]).filter(r=>r.janela==='geral'&&r.papel!=='_total').map(r=>r.papel));
     const gruposPapel={};
-    ordDomingo.forEach(c=>{ const chave=c.turno+'|'+papelDe(c.funcao); (gruposPapel[chave]=gruposPapel[chave]||[]).push(c); });
+    ordDomingo.forEach(c=>{
+      const papel=papelDe(c.funcao);
+      const chave=papeisGeralDomingo.has(papel)?('geral|'+papel):(c.turno+'|'+papel);
+      (gruposPapel[chave]=gruposPapel[chave]||[]).push(c);
+    });
     Object.values(gruposPapel).forEach(grupo=>{
       let conta0=grupo.filter(c=>travados.has(c.id)&&fase[c.id]===0).length;
       let conta1=grupo.filter(c=>travados.has(c.id)&&fase[c.id]===1).length;
