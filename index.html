@@ -14,6 +14,7 @@
   --t1:#1c6b8a; --t1-soft:#dceef5; --t2:#6a4b98; --t2-soft:#ebe4f5;
   --comp:#a8650a; --comp-soft:#fbeed6; --part:#257446; --part-soft:#dcf1e4;
   --vac:#7b858d; --vac-soft:#e4e8eb; --sun:#f6eef0; --warn:#b06d00; --ok:#257446;
+  --azul:#1d6fb8;
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark){
@@ -23,6 +24,7 @@
     --t1:#6cc0e0; --t1-soft:#16323d; --t2:#b79ae6; --t2-soft:#2b2340;
     --comp:#f0b34f; --comp-soft:#3a2b12; --part:#6fd39a; --part-soft:#16331f;
     --vac:#9aa5ad; --vac-soft:#26313a; --sun:#241a1f; --warn:#f0b34f; --ok:#6fd39a;
+    --azul:#6cb3e8;
     color-scheme: dark;
   }
 }
@@ -32,6 +34,7 @@
   --t1:#6cc0e0; --t1-soft:#16323d; --t2:#b79ae6; --t2-soft:#2b2340;
   --comp:#f0b34f; --comp-soft:#3a2b12; --part:#6fd39a; --part-soft:#16331f;
   --vac:#9aa5ad; --vac-soft:#26313a; --sun:#241a1f; --warn:#f0b34f; --ok:#6fd39a;
+  --azul:#6cb3e8;
   color-scheme: dark;
 }
 :root{ box-sizing:border-box; padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px); }
@@ -87,6 +90,11 @@ table.grid{ border-collapse:separate; border-spacing:0; min-width:100%; }
 .grid thead th .dn{ display:block; font-size:16px; font-weight:700; font-stretch:75%; }
 .grid thead th.sun,.grid td.sun{ background:var(--sun); }
 .grid thead th .fer{ display:block; font-size:10px; color:var(--red); font-weight:700; }
+.grid tr.t1 .name .n{ color:var(--part); }
+.grid tr.t2 .name .n{ color:var(--azul); }
+.nome-t1,.nome-t2{ font-weight:600; }
+.nome-t1{ color:var(--part); }
+.nome-t2{ color:var(--azul); }
 .grid th.tot,.grid td.tot{ min-width:68px; font-weight:700; }
 .grid th.tot:first-of-type,.grid td.tot:first-of-type{ border-left:2px solid var(--line); }
 .grid .name{ position:sticky; left:0; z-index:2; background:var(--sheet); text-align:left; padding:6px 10px; min-width:200px; max-width:220px; }
@@ -832,31 +840,33 @@ function viewEscala(v){
     <span class="item"><span class="big">${totF}</span>folgas de banco de horas</span>
     <span class="item"><span class="big">${fmtH(totP)}</span>em horas parciais</span>
     <button class="btn no-print" data-act="exportarExcel" style="align-self:center">Exportar Excel</button></div>
-  <div class="legend"><span><b class="chip mk-T">T</b>Trabalha</span><span><b class="chip mk-F">F</b>Folga semanal</span><span><b class="chip mk-C">C</b>Folga compensatória</span><span><b class="chip mk-P">−1h</b>Saída antecipada (turno 1) ou entrada mais tarde (turno 2)</span><span><b class="chip mk-V">Fér</b>Férias</span><span><b class="chip mk-ok">OK</b>Cobertura mínima atendida</span><span><b class="chip mk-alerta">⚠</b>Abaixo do mínimo</span><span>Toque em um dia para alterar.</span></div>
+  <div class="legend"><span><b class="chip mk-T">T</b>Trabalha</span><span><b class="chip mk-F">F</b>Folga semanal</span><span><b class="chip mk-C">C</b>Folga compensatória</span><span><b class="chip mk-P">−1h</b>Saída antecipada (turno 1) ou entrada mais tarde (turno 2)</span><span><b class="chip mk-V">Fér</b>Férias</span><span><b class="chip mk-ok">OK</b>Cobertura mínima atendida</span><span><b class="chip mk-alerta">⚠</b>Abaixo do mínimo</span><span class="nome-t1">● Turno 1</span><span class="nome-t2">● Turno 2</span><span>Toque em um dia para alterar.</span></div>
   <div class="grid-wrap"><table class="grid"><thead><tr><th class="name">${esc(loja.nome)}</th>`;
   for(const d of dias) h+=`<th class="${d.dow===0?'sun':''}"><span class="wd">${WD[d.dow]}</span><span class="dn">${pad(d.d)}</span>${d.fer?'<span class="fer">feriado</span>':''}</th>`;
   // Totais por pessoa (25/11, pedido do Stênio): 3 colunas no fim da tabela — dias
   // trabalhados, folgas (semanal + compensatória, sem contar férias) e folgas de domingo.
   h+='<th class="tot">Trabalhou</th><th class="tot">Folgas</th><th class="tot">Folgas dom.</th>';
   h+='</tr></thead><tbody>';
-  for(const t of [1,2]){
-    const grp=cs.filter(c=>c.turno===t);
-    h+=`<tr class="grp"><td class="name" colspan="1"><span class="bar" style="background:var(--t${t})"></span>${NOME_TURNO[t]}</td><td colspan="${dias.length+3}" style="text-align:left;color:var(--muted);font-weight:500">seg-sex ${hm(TURNOS.semana[t].ini)}–${hm(TURNOS.semana[t].fim)} · sáb ${hm(TURNOS.sabado[t].ini)}–${hm(TURNOS.sabado[t].fim)} · dom/feriado ${hm(TURNOS.domingo[t].ini)}–${hm(TURNOS.domingo[t].fim)}. ${grp.length} pessoas.</td></tr>`;
-    for(const c of grp){
-      const inf=v.colab[c.id]||{err:0,warn:0};
-      h+=`<tr class="t${t}"><td class="name${inf.err?' flag':''}"><span class="n">${esc(c.nome)}</span><span class="m"><span>${esc(c.funcao)}</span>${c.saldo>0?`<span class="bh">BH ${fmtH(c.saldo)}</span>`:''}</span></td>`;
-      for(const d of dias){
-        const x=E[c.id][d.iso]; const cls=v.cel[c.id+'|'+d.iso]||'';
-        const lab=x.s==='F'?'F':x.s==='C'?'C':x.s==='V'?'Fér':x.s==='P'?'−'+(x.p/60)+'h':x.s==='T'?'T':'';
-        h+=`<td class="cell s-${x.s} ${d.dow===0?'sun':''} ${cls}"><button data-act="cell" data-c="${c.id}" data-d="${d.iso}" aria-label="${esc(c.nome)}, ${fmtD(d.iso)}: ${esc(horario(c,d,x))}">${lab?`<b class="chip mk-${x.s}">${lab}</b>`:'<span class="mark"></span>'}</button></td>`;
-      }
-      const row=E[c.id];
-      const totTrab=dias.filter(d=>trabalha(row[d.iso])).length;
-      const totFolga=dias.filter(d=>row[d.iso].s==='F'||row[d.iso].s==='C').length;
-      const totFolgaDom=dias.filter(d=>d.dow===0&&(row[d.iso].s==='F'||row[d.iso].s==='C')).length;
-      h+=`<td class="tot">${totTrab}</td><td class="tot">${totFolga}</td><td class="tot">${totFolgaDom}</td>`;
-      h+='</tr>';
+  // Ordem fixa por função (25/11, pedido do Stênio): Gerente, Vendedor, Caixa, Estoquista — a
+  // cor do nome (verde turno 1 / azul turno 2) substitui a linha divisória que existia antes
+  // pra separar os turnos, então a tabela não agrupa mais por turno, só ordena por função.
+  const ORDEM_PAPEL=['gerente','vendedor','caixa','estoquista'];
+  const prioridadePapel=c=>{ const i=ORDEM_PAPEL.indexOf(papelDe(c.funcao)); return i===-1?ORDEM_PAPEL.length:i; };
+  const csOrdenado=[...cs].sort((a,b)=>prioridadePapel(a)-prioridadePapel(b)||a.turno-b.turno||a.nome.localeCompare(b.nome));
+  for(const c of csOrdenado){
+    const inf=v.colab[c.id]||{err:0,warn:0};
+    h+=`<tr class="t${c.turno}"><td class="name${inf.err?' flag':''}"><span class="n">${esc(c.nome)}</span><span class="m"><span>${esc(c.funcao)}</span>${c.saldo>0?`<span class="bh">BH ${fmtH(c.saldo)}</span>`:''}</span></td>`;
+    for(const d of dias){
+      const x=E[c.id][d.iso]; const cls=v.cel[c.id+'|'+d.iso]||'';
+      const lab=x.s==='F'?'F':x.s==='C'?'C':x.s==='V'?'Fér':x.s==='P'?'−'+(x.p/60)+'h':x.s==='T'?'T':'';
+      h+=`<td class="cell s-${x.s} ${d.dow===0?'sun':''} ${cls}"><button data-act="cell" data-c="${c.id}" data-d="${d.iso}" aria-label="${esc(c.nome)}, ${fmtD(d.iso)}: ${esc(horario(c,d,x))}">${lab?`<b class="chip mk-${x.s}">${lab}</b>`:'<span class="mark"></span>'}</button></td>`;
     }
+    const row=E[c.id];
+    const totTrab=dias.filter(d=>trabalha(row[d.iso])).length;
+    const totFolga=dias.filter(d=>row[d.iso].s==='F'||row[d.iso].s==='C').length;
+    const totFolgaDom=dias.filter(d=>d.dow===0&&(row[d.iso].s==='F'||row[d.iso].s==='C')).length;
+    h+=`<td class="tot">${totTrab}</td><td class="tot">${totFolga}</td><td class="tot">${totFolgaDom}</td>`;
+    h+='</tr>';
   }
   h+='</tbody><tfoot>';
   // Total por função, por dia (25/11, pedido do Stênio): soma os 2 turnos, pra cada função que
