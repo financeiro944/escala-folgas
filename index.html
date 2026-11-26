@@ -649,37 +649,55 @@ function gerar(){
       // do que ela deve, e sempre travado pela cobertura mínima (não é obrigação legal, é só
       // uma concentração deliberada do descanso).
       const emRec=sem.dias.some(d=>emRecuperacao(loja,d.iso));
+      // Semana que toca o pico, mesmo sem ser ela mesma pico inteira (25/11, bug achado pelo
+      // Stênio): o pico pode encolher os dias elegíveis pra folga normal dessa semana a só 1-2
+      // dias (ex.: semana cheia com pico começando na quarta só deixa segunda/terça livres) —
+      // se a regra de "semana cheia ignora cobertura" continuar valendo aqui, TODO MUNDO que
+      // precisa das 2 folgas da semana cai nesses mesmos 1-2 dias ao mesmo tempo, e a loja fica
+      // sem ninguém (aconteceu de verdade: segunda e terça antes do pico ficaram vazias).
+      // Correção: semana tocada por pico nunca ignora cobertura, mesmo sendo "semana cheia".
+      const tocaPico=sem.dias.some(d=>emPico(loja,d.iso));
       const urg=c=>{ let m=Infinity; for(const d of sem.dias){ if(proibidaFolgaLoja(d)||E[c.id][d.iso].s!=='T') continue; const {b,a}=sequencia(E[c.id],dias,dias.indexOf(d)); m=Math.min(m,Math.max(0,b-4)+Math.max(0,a-4)); } return m===Infinity?0:m; };
       const ordSem=[...ord].sort((x,y)=>urg(y)-urg(x));
+      const elegivel=c=>!sem.dias.some(d=>E[c.id][d.iso].s==='V')&&!c.folgaFimDeSemana;
+      // Passo 1 (25/11, separado do passo 2 por causa de um bug novo): garante o NORMAL da
+      // semana pra todo mundo primeiro — antes, numa semana de recuperação, uma pessoa
+      // processada antes podia consumir toda a cobertura disponível com o EXTRA de dívida,
+      // deixando quem vinha depois sem nem o normal da semana (direito legal). Passo 2 só
+      // distribui o extra de dívida depois que todo mundo já tentou o normal.
       for(const c of ordSem){
-        if(sem.dias.some(d=>E[c.id][d.iso].s==='V')) continue;
-        // Sem fim de semana (25/11): já folga sábado+domingo toda semana por contrato — não
-        // entra no gerador de folga semanal (senão ganharia uma 3ª folga indevida).
-        if(c.folgaFimDeSemana) continue;
+        if(!elegivel(c)) continue;
         if(!completa&&!emRec&&urg(c)<=0) continue;
         const jaTem=sem.dias.filter(d=>ehFolga(E[c.id][d.iso])).length;
         // semana incompleta: a folga é um extra de alívio (1, igual já era antes), não a
-        // obrigação cheia de 2 — por isso o alvo aqui é "mais 1", não "necessario". Em
-        // recuperação, o alvo é o normal da semana + o quanto der pra abater da dívida,
-        // travado em no máximo "dias da semana" (não dá pra folgar mais dias do que a semana
-        // tem).
-        const debitoAlvo=emRec?Math.min(debitoRestante[c.id]||0,sem.dias.length-necessario):0;
-        const alvo=emRec?(necessario+debitoAlvo):(completa?necessario:jaTem+1);
+        // obrigação cheia de 2 — por isso o alvo aqui é "mais 1", não "necessario".
+        const alvo=completa?necessario:jaTem+1;
         let faltam=alvo-jaTem;
         for(let n=0;n<faltam;n++){
           let best=null,bs=Infinity;
           for(const d of sem.dias){ if(proibidaFolgaLoja(d)||E[c.id][d.iso].s!=='T') continue; const sc=pontuar(E,dias,loja,cs,c,d); if(sc<bs){bs=sc;best=d;} }
-          // na semana incompleta (ou em recuperação) a folga é um extra, não obrigação legal:
-          // não vale a pena furar a cobertura mínima só pra aliviar uma sequência ou acelerar a
-          // recuperação (por isso só na semana cheia normal é que ignora a cobertura).
-          if(best&&((completa&&!emRec)||!quebraCobertura(loja,E,cs,best,c))) E[c.id][best.iso].s='F';
+          // na semana incompleta, ou tocada por pico, a folga respeita a cobertura mínima — só
+          // a semana cheia normal (sem relação com pico) ignora a cobertura, porque aí é
+          // obrigação legal sem alternativa melhor.
+          if(best&&((completa&&!tocaPico)||!quebraCobertura(loja,E,cs,best,c))) E[c.id][best.iso].s='F';
           else break;
         }
-        if(emRec){
-          const temAgora=sem.dias.filter(d=>ehFolga(E[c.id][d.iso])).length;
-          const excedente=Math.max(0,temAgora-necessario);
-          debitoRestante[c.id]=Math.max(0,(debitoRestante[c.id]||0)-Math.min(debitoRestante[c.id]||0,excedente));
+      }
+      // Passo 2 — recuperação (25/11): só o EXTRA além do normal, sempre travado pela
+      // cobertura mínima (não é obrigação legal, é concentração deliberada do descanso).
+      if(emRec) for(const c of ordSem){
+        if(!elegivel(c)) continue;
+        const jaTem=sem.dias.filter(d=>ehFolga(E[c.id][d.iso])).length;
+        const debitoAlvo=Math.min(debitoRestante[c.id]||0,sem.dias.length-jaTem);
+        for(let n=0;n<debitoAlvo;n++){
+          let best=null,bs=Infinity;
+          for(const d of sem.dias){ if(proibidaFolgaLoja(d)||E[c.id][d.iso].s!=='T') continue; const sc=pontuar(E,dias,loja,cs,c,d); if(sc<bs){bs=sc;best=d;} }
+          if(best&&!quebraCobertura(loja,E,cs,best,c)) E[c.id][best.iso].s='F';
+          else break;
         }
+        const temAgora=sem.dias.filter(d=>ehFolga(E[c.id][d.iso])).length;
+        const excedente=Math.max(0,temAgora-necessario);
+        debitoRestante[c.id]=Math.max(0,(debitoRestante[c.id]||0)-Math.min(debitoRestante[c.id]||0,excedente));
       }
     }
     // Correção de cobertura por troca de dia (24/11, generalizada — antes só cobria
