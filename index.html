@@ -859,6 +859,19 @@ function viewEscala(v){
     }
   }
   h+='</tbody><tfoot>';
+  // Total por função, por dia (25/11, pedido do Stênio): soma os 2 turnos, pra cada função que
+  // existe na equipe dessa loja — diferente das linhas "Presentes" abaixo (que só existem pras
+  // regras de cobertura configuradas, por janela); aqui é todo mundo daquela função, sempre.
+  const papeisExistentes=[...new Set(cs.map(c=>papelDe(c.funcao)))];
+  papeisExistentes.forEach(papel=>{
+    const rotulo=(PAPEIS.find(p=>p[0]===papel)||[papel,papel])[1];
+    h+=`<tr><td class="name">Total: ${esc(rotulo)}</td>`;
+    for(const d of dias){
+      const n=cs.filter(c=>papelDe(c.funcao)===papel&&trabalha(E[c.id][d.iso])).length;
+      h+=`<td>${n}</td>`;
+    }
+    h+='<td class="na">—</td><td class="na">—</td><td class="na">—</td></tr>';
+  });
   const grupos=[], vistos=new Set();
   ['semana','sabado','domingo'].forEach(k=>aplicarPisoVendedor(loja.cob[k]).forEach(regra=>{
     const chave=regra.janela+'|'+regra.papel;
