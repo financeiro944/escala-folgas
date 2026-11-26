@@ -450,12 +450,14 @@ function gerar(){
     // parte, cada um do seu jeito — ver blocos próprios abaixo).
     const ordDomingo=ord.filter(c=>!c.folgaFimDeSemana&&!c.domingoRaro);
     // VR (24/11, generalizado 25/11 pra aceitar mais de uma por loja — caso da Sol de Copa,
-    // que tem 2 VRs): pessoa(s) marcada(s) como responsável pela loja quando a gerente não
-    // está. Nenhuma delas pode folgar no mesmo dia que a gerente — tratado em dois pontos
-    // abaixo: a fase de domingo (logo adiante) e uma troca de dia depois da folga semanal
-    // (mais abaixo). Não precisa que as VRs nunca folguem entre si (só cada uma vs. a
-    // gerente) — com 2+ VRs e fase binária (0/1) não dá pra garantir as 3 sempre diferentes
-    // ao mesmo tempo, mas o que importa é a gerente nunca ficar sozinha sem nenhuma VR.
+    // que tem 2 VRs, Dominique e Rosa): pessoa(s) marcada(s) como responsável pela loja quando
+    // a gerente não está.
+    // Com fase binária (0/1) não dá pra garantir ao mesmo tempo "gerente nunca sem nenhuma VR"
+    // E "as VRs nunca folgam entre si" quando tem 2+ VRs (pigeonhole: 3 pessoas, 2 fases, duas
+    // delas sempre caem juntas) — o Stênio escolheu priorizar as VRs nunca coincidirem entre si
+    // na Sol de Copa, deixando a gerente livre (não precisa mais revezar com elas nessa loja).
+    // Regra: com 1 VR só, pareia gerente+VR (como sempre foi); com 2+ VRs, pareia as VRs entre
+    // si em vez de cada uma com a gerente.
     const gerenteDaLoja=cs.find(c=>papelDe(c.funcao)==='gerente');
     const vrsDaLoja=cs.filter(c=>c.vr&&(!gerenteDaLoja||c.id!==gerenteDaLoja.id));
     // Domingo (23/11): regra unificada para todo mundo — trabalha um domingo sim,
@@ -470,7 +472,11 @@ function gerar(){
     // desfazer um par de prioridade mais alta já resolvido (ex.: se a VR também for uma das
     // 2 caixas, a correção da dupla de caixa mexe na OUTRA caixa, nunca desfaz a da VR).
     const paresDevemDiferir=[];
-    if(gerenteDaLoja) vrsDaLoja.forEach(vr=>paresDevemDiferir.push([gerenteDaLoja.id,vr.id]));
+    if(vrsDaLoja.length>=2){
+      for(let i=1;i<vrsDaLoja.length;i++) paresDevemDiferir.push([vrsDaLoja[0].id,vrsDaLoja[i].id]);
+    } else if(gerenteDaLoja){
+      vrsDaLoja.forEach(vr=>paresDevemDiferir.push([gerenteDaLoja.id,vr.id]));
+    }
     const gruposPapel={};
     ordDomingo.forEach(c=>{ const chave=c.turno+'|'+papelDe(c.funcao); (gruposPapel[chave]=gruposPapel[chave]||[]).push(c); });
     Object.values(gruposPapel).forEach(grupo=>{ for(let i=1;i<grupo.length;i++) paresDevemDiferir.push([grupo[0].id,grupo[i].id]); });
