@@ -1012,18 +1012,12 @@ function viewEquipes(){
       hh+=`</div><button class="btn" data-act="cobAdd" data-l="${loja.id}" data-g="${chave}">+ adicionar regra</button></div>`;
       return hh;
     };
-    const picos=loja.picos||(loja.picos=[]);
-    const picoHtml=`<div class="cov-grupo"><h3>Períodos de pico (ninguém tira folga)</h3>
-      <p class="muted" style="max-width:60ch">Exceção às regras normais, inclusive ao limite de 7 dias seguidos — usar com cuidado (ver CLAUDE.md). "Recuperar até" é opcional: se preenchido, do dia seguinte ao fim do pico até essa data o gerador tenta dar o máximo de folga possível (respeitando só a cobertura mínima) pra compensar concentrado.</p>
-      <div class="cov-lista">${picos.map((p,i)=>`<div class="cov-regra">
-        de <input type="date" value="${p.inicio||''}" data-act="picoInicio" data-l="${loja.id}" data-i="${i}" aria-label="Início do pico">
-        até <input type="date" value="${p.fim||''}" data-act="picoFim" data-l="${loja.id}" data-i="${i}" aria-label="Fim do pico">
-        recuperar até <input type="date" value="${p.recuperarAte||''}" data-act="picoRecuperar" data-l="${loja.id}" data-i="${i}" aria-label="Recuperar até">
-        <button data-act="picoDel" data-l="${loja.id}" data-i="${i}" aria-label="Remover período de pico">×</button>
-      </div>`).join('')||'<span class="muted">Nenhum período de pico cadastrado.</span>'}</div>
-      <button class="btn" data-act="picoAdd" data-l="${loja.id}">+ adicionar período de pico</button></div>`;
+    // Botão de "período de pico" tirado da tela a pedido do Stênio (25/11) — vamos ajustar
+    // essa interface em outro momento. O dado (loja.picos) e toda a lógica do gerador/
+    // validador continuam funcionando normalmente (a Sol de Copa já tem um pico configurado);
+    // só não dá mais pra cadastrar/editar período de pico pela tela por enquanto.
     h+=`<section class="store"><div class="store-head"><h2>${esc(loja.nome)}</h2></div>
-    <div class="cov-grupos">${grupoCob('semana','Segunda a sexta')}${grupoCob('sabado','Sábado')}${grupoCob('domingo','Domingo e feriado')}${picoHtml}</div>
+    <div class="cov-grupos">${grupoCob('semana','Segunda a sexta')}${grupoCob('sabado','Sábado')}${grupoCob('domingo','Domingo e feriado')}</div>
     <div class="tbl-wrap"><table class="list"><thead><tr><th>Colaborador</th><th>Função</th><th>VR</th><th>Turno</th><th>Sexo</th><th>Loja</th><th>Férias no período</th></tr></thead><tbody>`;
     for(const c of cs){
       h+=`<tr><td><b>${esc(c.nome)}</b></td><td>${esc(c.funcao)}</td>
