@@ -82,7 +82,18 @@ button{ cursor:pointer; }
 .chip{ display:inline-grid; place-items:center; min-width:26px; height:22px; padding:0 4px; border-radius:4px; font-weight:700; font-size:12px; font-stretch:80%; }
 
 /* grade */
-.grid-wrap{ overflow-x:auto; border:1px solid var(--line); border-radius:10px; background:var(--sheet); box-shadow:0 1px 3px rgba(0,0,0,.06), 0 1px 2px rgba(0,0,0,.04); }
+/* Tabela da escala sempre clara (25/11, pedido do Stênio): redefine as cores aqui dentro pro
+   valor do tema claro, sem depender de prefers-color-scheme/data-theme — assim a tabela fica
+   sempre branca, mesmo se o resto do app estiver no modo escuro. */
+.grid-wrap{
+  --sheet:#ffffff; --sheet2:#eaeef0; --line:#d5dbdf; --ink:#16202a; --muted:#5d6973;
+  --red:#c8102e; --red-soft:#fde4e8;
+  --t1:#1c6b8a; --t1-soft:#dceef5; --t2:#6a4b98; --t2-soft:#ebe4f5;
+  --comp:#a8650a; --comp-soft:#fbeed6; --part:#257446; --part-soft:#dcf1e4;
+  --vac:#7b858d; --vac-soft:#e4e8eb; --sun:#f6eef0; --azul:#1d6fb8;
+  color-scheme:light; color:var(--ink);
+  overflow-x:auto; border:1px solid var(--line); border-radius:10px; background:var(--sheet); box-shadow:0 1px 3px rgba(0,0,0,.06), 0 1px 2px rgba(0,0,0,.04);
+}
 table.grid{ border-collapse:separate; border-spacing:0; min-width:100%; }
 .grid th,.grid td{ border-bottom:1px solid var(--line); border-right:1px solid var(--line); padding:0; text-align:center; }
 .grid thead th{ position:sticky; top:0; background:var(--sheet); z-index:3; font-weight:500; padding:6px 2px; min-width:40px; }
