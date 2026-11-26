@@ -498,9 +498,6 @@ function gerar(){
     } else if(gerenteDaLoja){
       vrsDaLoja.forEach(vr=>paresDevemDiferir.push([gerenteDaLoja.id,vr.id]));
     }
-    const gruposPapel={};
-    ordDomingo.forEach(c=>{ const chave=c.turno+'|'+papelDe(c.funcao); (gruposPapel[chave]=gruposPapel[chave]||[]).push(c); });
-    Object.values(gruposPapel).forEach(grupo=>{ for(let i=1;i<grupo.length;i++) paresDevemDiferir.push([grupo[0].id,grupo[i].id]); });
     const travados=new Set();
     paresDevemDiferir.forEach(([a,b])=>{
       if(fase[a]!==fase[b]){ travados.add(a); travados.add(b); return; }
@@ -509,6 +506,24 @@ function gerar(){
       // se os dois já estiverem travados por um par de prioridade mais alta e ainda assim
       // coincidirem, deixa como está — vira um alerta ocasional de cobertura, caso raro.
       travados.add(a); travados.add(b);
+    });
+    // Escalona grupos de mesmo papel+turno (24/11, corrigido 26/11): o jeito antigo só opunha
+    // 1 pessoa do grupo contra todas as outras (pareando [grupo[0],grupo[i]] pra cada i) — com
+    // mais de 2-3 pessoas isso podia deixar 1 pessoa sozinha numa fase e o RESTO DO GRUPO
+    // INTEIRO junto na outra (achado testando a Multicores: 6 de 7 vendedores do turno 2
+    // caíram na mesma fase, trabalhando o mesmo domingo e folgando a mesma segunda obrigatória
+    // juntos). Corrigido: em vez de pares, distribui cada grupo o mais equilibrado possível
+    // entre as 2 fases (metade/metade), respeitando quem já estiver travado por um par de
+    // prioridade mais alta (gerente/VR).
+    const gruposPapel={};
+    ordDomingo.forEach(c=>{ const chave=c.turno+'|'+papelDe(c.funcao); (gruposPapel[chave]=gruposPapel[chave]||[]).push(c); });
+    Object.values(gruposPapel).forEach(grupo=>{
+      let conta0=grupo.filter(c=>travados.has(c.id)&&fase[c.id]===0).length;
+      let conta1=grupo.filter(c=>travados.has(c.id)&&fase[c.id]===1).length;
+      grupo.filter(c=>!travados.has(c.id)).forEach(c=>{
+        if(conta0<=conta1){ fase[c.id]=0; conta0++; } else { fase[c.id]=1; conta1++; }
+        travados.add(c.id);
+      });
     });
     const domsSun=dias.filter(d=>d.dow===0);
     // Reverter a folga de domingo de índice i do colaborador c cria 2 domingos seguidos
