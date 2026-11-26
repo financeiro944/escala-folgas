@@ -87,6 +87,8 @@ table.grid{ border-collapse:separate; border-spacing:0; min-width:100%; }
 .grid thead th .dn{ display:block; font-size:16px; font-weight:700; font-stretch:75%; }
 .grid thead th.sun,.grid td.sun{ background:var(--sun); }
 .grid thead th .fer{ display:block; font-size:10px; color:var(--red); font-weight:700; }
+.grid th.tot,.grid td.tot{ min-width:68px; font-weight:700; }
+.grid th.tot:first-of-type,.grid td.tot:first-of-type{ border-left:2px solid var(--line); }
 .grid .name{ position:sticky; left:0; z-index:2; background:var(--sheet); text-align:left; padding:6px 10px; min-width:200px; max-width:220px; }
 .grid thead th.name{ z-index:4; }
 .name .n{ font-weight:600; display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
@@ -833,10 +835,13 @@ function viewEscala(v){
   <div class="legend"><span><b class="chip mk-T">T</b>Trabalha</span><span><b class="chip mk-F">F</b>Folga semanal</span><span><b class="chip mk-C">C</b>Folga compensatória</span><span><b class="chip mk-P">−1h</b>Saída antecipada (turno 1) ou entrada mais tarde (turno 2)</span><span><b class="chip mk-V">Fér</b>Férias</span><span><b class="chip mk-ok">OK</b>Cobertura mínima atendida</span><span><b class="chip mk-alerta">⚠</b>Abaixo do mínimo</span><span>Toque em um dia para alterar.</span></div>
   <div class="grid-wrap"><table class="grid"><thead><tr><th class="name">${esc(loja.nome)}</th>`;
   for(const d of dias) h+=`<th class="${d.dow===0?'sun':''}"><span class="wd">${WD[d.dow]}</span><span class="dn">${pad(d.d)}</span>${d.fer?'<span class="fer">feriado</span>':''}</th>`;
+  // Totais por pessoa (25/11, pedido do Stênio): 3 colunas no fim da tabela — dias
+  // trabalhados, folgas (semanal + compensatória, sem contar férias) e folgas de domingo.
+  h+='<th class="tot">Trabalhou</th><th class="tot">Folgas</th><th class="tot">Folgas dom.</th>';
   h+='</tr></thead><tbody>';
   for(const t of [1,2]){
     const grp=cs.filter(c=>c.turno===t);
-    h+=`<tr class="grp"><td class="name" colspan="1"><span class="bar" style="background:var(--t${t})"></span>${NOME_TURNO[t]}</td><td colspan="${dias.length}" style="text-align:left;color:var(--muted);font-weight:500">seg-sex ${hm(TURNOS.semana[t].ini)}–${hm(TURNOS.semana[t].fim)} · sáb ${hm(TURNOS.sabado[t].ini)}–${hm(TURNOS.sabado[t].fim)} · dom/feriado ${hm(TURNOS.domingo[t].ini)}–${hm(TURNOS.domingo[t].fim)}. ${grp.length} pessoas.</td></tr>`;
+    h+=`<tr class="grp"><td class="name" colspan="1"><span class="bar" style="background:var(--t${t})"></span>${NOME_TURNO[t]}</td><td colspan="${dias.length+3}" style="text-align:left;color:var(--muted);font-weight:500">seg-sex ${hm(TURNOS.semana[t].ini)}–${hm(TURNOS.semana[t].fim)} · sáb ${hm(TURNOS.sabado[t].ini)}–${hm(TURNOS.sabado[t].fim)} · dom/feriado ${hm(TURNOS.domingo[t].ini)}–${hm(TURNOS.domingo[t].fim)}. ${grp.length} pessoas.</td></tr>`;
     for(const c of grp){
       const inf=v.colab[c.id]||{err:0,warn:0};
       h+=`<tr class="t${t}"><td class="name${inf.err?' flag':''}"><span class="n">${esc(c.nome)}</span><span class="m"><span>${esc(c.funcao)}</span>${c.saldo>0?`<span class="bh">BH ${fmtH(c.saldo)}</span>`:''}</span></td>`;
@@ -845,6 +850,11 @@ function viewEscala(v){
         const lab=x.s==='F'?'F':x.s==='C'?'C':x.s==='V'?'Fér':x.s==='P'?'−'+(x.p/60)+'h':x.s==='T'?'T':'';
         h+=`<td class="cell s-${x.s} ${d.dow===0?'sun':''} ${cls}"><button data-act="cell" data-c="${c.id}" data-d="${d.iso}" aria-label="${esc(c.nome)}, ${fmtD(d.iso)}: ${esc(horario(c,d,x))}">${lab?`<b class="chip mk-${x.s}">${lab}</b>`:'<span class="mark"></span>'}</button></td>`;
       }
+      const row=E[c.id];
+      const totTrab=dias.filter(d=>trabalha(row[d.iso])).length;
+      const totFolga=dias.filter(d=>row[d.iso].s==='F'||row[d.iso].s==='C').length;
+      const totFolgaDom=dias.filter(d=>d.dow===0&&(row[d.iso].s==='F'||row[d.iso].s==='C')).length;
+      h+=`<td class="tot">${totTrab}</td><td class="tot">${totFolga}</td><td class="tot">${totFolgaDom}</td>`;
       h+='</tr>';
     }
   }
@@ -862,7 +872,7 @@ function viewEscala(v){
       const r=v.cob[loja.id+'|'+d.iso+'|'+g.janela+'|'+g.papel];
       h+=`<td class="${r.ok?'':'short'}">${r.cnt}/${r.min}</td>`;
     }
-    h+='</tr>';
+    h+='<td class="na">—</td><td class="na">—</td><td class="na">—</td></tr>';
   });
   // Resumo visual por dia (24/11, pedido do Stênio): quadrinho verde "OK" quando TODAS as
   // regras de cobertura daquele dia batem o mínimo (ou a equipe completa, que é o mesmo caso
@@ -875,7 +885,7 @@ function viewEscala(v){
     const todasOk=regrasDia.every(regra=>{ const r=v.cob[loja.id+'|'+d.iso+'|'+regra.janela+'|'+regra.papel]; return r&&r.ok; });
     h+=`<td title="${todasOk?'Cobertura mínima atendida':'Cobertura abaixo do mínimo'}"><b class="chip ${todasOk?'mk-ok':'mk-alerta'}">${todasOk?'OK':'⚠'}</b></td>`;
   }
-  h+='</tr>';
+  h+='<td class="na">—</td><td class="na">—</td><td class="na">—</td></tr>';
   h+='</tfoot></table></div>';
   h+=`<section class="issues"><h2>${L.length?'Pontos para revisar':'Tudo certo com as regras nesta loja'}</h2>${L.length?'<ul>'+L.map(x=>`<li class="${x.n==='e'?'':x.n}">${esc(x.t)}</li>`).join('')+'</ul>':''}</section>`;
   return h;
