@@ -313,6 +313,40 @@ async function salvarEstadoRemoto(email,senha,st){
 }
 function indicarSync(ok){ const el=document.getElementById('syncErr'); if(el) el.style.display=ok?'none':''; }
 
+/* ---- "Buscar novidades no Pontomais" (27/11) ----
+   Compara quem já está cadastrado na loja com o centro de custo correspondente no Pontomais e
+   mostra só quem é novo, pra revisão manual — nunca adiciona ninguém sozinho. O token do
+   Pontomais mora só no backend (Code.gs), nunca aparece aqui. */
+function normalizaNome(s){ return String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().trim(); }
+function slugify(s){ return normalizaNome(s).replace(/[^a-z0-9]+/g,''); }
+function idColabUnico(base){ let id=base,n=2; while(state.colabs.some(c=>c.id===id)){ id=base+n; n++; } return id; }
+// Só um primeiro palpite (o cadastro de horário do Pontomais já errou muitas vezes) — o turno
+// sempre dá pra ajustar depois com os botões "Turno 1/2" que já existem na equipe.
+function turnoDoTextoPontomais(txt){ return String(txt||'').includes('08:40')?1:2; }
+async function buscarNovidadesPontomais(loja){
+  const login=loginSalvo(); if(!login) return;
+  ui.novidadesCarregando=loja.id; render();
+  try{
+    const r=await fetch(API_URL,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify({email:login.email,senha:login.senha,action:'pontomaisBuscar',costCenter:loja.costCenter||loja.nome})});
+    const j=await r.json();
+    if(!j.ok) throw new Error(j.erro||'Falha ao buscar no Pontomais.');
+    const existentes=new Set(state.colabs.filter(c=>c.loja===loja.id).map(c=>normalizaNome(c.nome)));
+    ui.novidades[loja.id]=(j.employees||[]).filter(e=>!existentes.has(normalizaNome(e.nome)));
+  }catch(err){
+    ui.novidades[loja.id]={erro:String(err.message||err)};
+  }
+  ui.novidadesCarregando=null; render();
+}
+function adicionarColabPontomais(lojaId,pessoa){
+  const id=idColabUnico(lojaId+'_'+(slugify(pessoa.nome)||'novo'));
+  const turno=turnoDoTextoPontomais(pessoa.turno);
+  const sexo=pessoa.genero==='Masculino'?'M':'F';
+  const saldo=Math.round((pessoa.saldo||0)/60);
+  state.colabs.push({id,nome:pessoa.nome,sexo,loja:lojaId,turno,funcao:pessoa.cargo||'',saldo,ferias:[],vr:false});
+  if(Array.isArray(ui.novidades[lojaId])) ui.novidades[lojaId]=ui.novidades[lojaId].filter(p=>p.id!==pessoa.id);
+  markDirty();
+}
+
 let state=null;
 function save(){
   try{ localStorage.setItem(LS_KEY,JSON.stringify(state)); }catch(e){}
@@ -320,7 +354,7 @@ function save(){
   if(!login) return;
   salvarEstadoRemoto(login.email,login.senha,state).then(()=>indicarSync(true)).catch(()=>indicarSync(false));
 }
-const ui={tab:'escala',loja:null,pop:null};
+const ui={tab:'escala',loja:null,pop:null,novidades:{},novidadesCarregando:null};
 
 /* datas */
 function parseISO(s){const [y,m,d]=s.split('-').map(Number);return new Date(Date.UTC(y,m-1,d));}
@@ -995,7 +1029,25 @@ function viewEquipes(){
       <td><select data-act="moveloja" data-c="${c.id}">${state.lojas.map(l=>`<option value="${l.id}"${l.id===c.loja?' selected':''}>${esc(l.nome)}</option>`).join('')}</select></td>
       <td class="muted">${(c.ferias||[]).length?c.ferias.map(([a,b])=>fmtD(a)+' a '+fmtD(b)).join(', '):'—'}</td></tr>`;
     }
-    h+='</tbody></table></div></section>';
+    h+='</tbody></table></div>';
+    h+=`<div class="pontomais-novidades" style="margin-top:10px">
+      <button class="btn" data-act="buscarPontomais" data-l="${loja.id}"${ui.novidadesCarregando===loja.id?' disabled':''}>${ui.novidadesCarregando===loja.id?'Buscando…':'Buscar novidades no Pontomais'}</button>`;
+    const nov=ui.novidades[loja.id];
+    if(nov && nov.erro){
+      h+=`<p class="muted" style="color:var(--red)">Erro ao buscar: ${esc(nov.erro)}</p>`;
+    }else if(Array.isArray(nov)){
+      if(!nov.length){
+        h+='<p class="muted">Nenhuma novidade — todo mundo do centro de custo já está cadastrado aqui.</p>';
+      }else{
+        h+=`<div class="tbl-wrap" style="margin-top:8px"><table class="list"><thead><tr><th>Nome</th><th>Cargo (Pontomais)</th><th>Horário (Pontomais)</th><th>Admissão</th><th></th></tr></thead><tbody>`;
+        nov.forEach((p,i)=>{
+          h+=`<tr><td>${esc(p.nome)}</td><td>${esc(p.cargo)}</td><td class="muted">${esc(p.turno)}</td><td class="muted">${esc(p.admissao)}</td>
+          <td><button class="btn primary" data-act="addPontomais" data-l="${loja.id}" data-i="${i}">+ Adicionar à equipe</button></td></tr>`;
+        });
+        h+='</tbody></table></div>';
+      }
+    }
+    h+='</div></section>';
   }
   return h+`<p class="muted">Na versão final, nomes, funções e férias virão do Pontomais. A divisão por turno e a cobertura mínima continuam sendo definidas aqui. A regra de domingo (1 sim, 1 não) é igual para todo mundo e não é mais configurável por pessoa.</p>`;
 }
@@ -1125,6 +1177,8 @@ document.addEventListener('click',e=>{
     markDirty(); return;
   }
   if(a==='reset'){ if(confirm('Apagar TODOS os dados desta conta (lojas, colaboradores, escalas, feriados)? Não dá pra desfazer.')){ state=defaultState(); ui.loja=null; save(); render(); } return; }
+  if(a==='buscarPontomais'){ const loja=state.lojas.find(l=>l.id===el.dataset.l); if(loja) buscarNovidadesPontomais(loja); return; }
+  if(a==='addPontomais'){ const lojaId=el.dataset.l, i=+el.dataset.i; const lista=ui.novidades[lojaId]; const pessoa=Array.isArray(lista)?lista[i]:null; if(pessoa) adicionarColabPontomais(lojaId,pessoa); return; }
 });
 document.addEventListener('change',e=>{
   const el=e.target; const a=el.dataset.act;
